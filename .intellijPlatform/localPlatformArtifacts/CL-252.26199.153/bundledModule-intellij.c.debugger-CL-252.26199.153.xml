@@ -1,0 +1,15 @@
+<ivy-module version="2.0">
+  <info organisation="bundledModule" module="intellij.c.debugger" revision="CL-252.26199.153" />
+  <configurations>
+    <conf name="default" visibility="public" />
+  </configurations>
+  <publications>
+    <artifact name="intellij.c.debugger" ext="jar" conf="default" url="plugins/c/lib/modules" />
+  </publications>
+  <dependencies>
+    <dependency org="bundledModule" name="intellij.cidr.asm" rev="CL-252.26199.153" />
+    <dependency org="bundledModule" name="intellij.cidr.lang.base" rev="CL-252.26199.153" />
+    <dependency org="bundledModule" name="intellij.cidr.psi.base" rev="CL-252.26199.153" />
+    <dependency org="bundledModule" name="intellij.c.core" rev="CL-252.26199.153" />
+  </dependencies>
+</ivy-module>

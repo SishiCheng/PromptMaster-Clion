@@ -1,0 +1,16 @@
+<ivy-module version="2.0">
+  <info organisation="bundledModule" module="intellij.clion.core" revision="CL-252.26199.153" />
+  <configurations>
+    <conf name="default" visibility="public" />
+  </configurations>
+  <publications>
+    <artifact name="intellij.clion.core" ext="jar" conf="default" url="plugins/clion/lib/modules" />
+  </publications>
+  <dependencies>
+    <dependency org="bundledModule" name="intellij.cidr.lang.base" rev="CL-252.26199.153" />
+    <dependency org="bundledModule" name="intellij.cidr.workspaceModel" rev="CL-252.26199.153" />
+    <dependency org="bundledModule" name="intellij.cidr.projectModel" rev="CL-252.26199.153" />
+    <dependency org="bundledModule" name="intellij.clion.toolchains" rev="CL-252.26199.153" />
+    <dependency org="bundledModule" name="intellij.clion.execution" rev="CL-252.26199.153" />
+  </dependencies>
+</ivy-module>

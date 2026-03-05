@@ -1,0 +1,8 @@
+<idea-plugin>
+    <!--
+        Loaded ONLY when com.intellij.cidr.lang (Classic C/C++ Engine) is available.
+        Currently empty - the mere presence of this optional dependency gives our
+        plugin's classloader access to OCFile and the rest of the CIDR PSI API.
+        Future: CIDR-specific extensions can be registered here.
+    -->
+</idea-plugin>

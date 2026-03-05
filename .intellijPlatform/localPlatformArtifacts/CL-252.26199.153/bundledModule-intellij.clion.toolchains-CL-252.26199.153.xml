@@ -1,0 +1,16 @@
+<ivy-module version="2.0">
+  <info organisation="bundledModule" module="intellij.clion.toolchains" revision="CL-252.26199.153" />
+  <configurations>
+    <conf name="default" visibility="public" />
+  </configurations>
+  <publications>
+    <artifact name="intellij.clion.toolchains" ext="jar" conf="default" url="plugins/clion/lib/modules" />
+  </publications>
+  <dependencies>
+    <dependency org="bundledModule" name="intellij.cidr.workspaceModel" rev="CL-252.26199.153" />
+    <dependency org="bundledModule" name="intellij.cidr.projectModel" rev="CL-252.26199.153" />
+    <dependency org="bundledModule" name="intellij.cidr.util" rev="CL-252.26199.153" />
+    <dependency org="bundledModule" name="intellij.cidr.util.ui" rev="CL-252.26199.153" />
+    <dependency org="bundledModule" name="intellij.platform.ssh.nio" rev="CL-252.26199.153" />
+  </dependencies>
+</ivy-module>

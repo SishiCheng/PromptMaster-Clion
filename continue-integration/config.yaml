@@ -1,0 +1,42 @@
+# ============================================================
+# Continue 配置示例 — 集成 PromptMaster-Clion 插件
+# ============================================================
+#
+# 将以下配置合并到你的 Continue config.yaml 中
+# 默认路径: ~/.continue/config.yaml
+#
+# PromptMaster-Clion 插件在 CLion 内置服务器上暴露 HTTP API:
+#   http://localhost:63342/api/cpp-context/...
+#
+# Continue 通过 HTTP Context Provider 获取 C/C++ 上下文
+
+context:
+  providers:
+    # 文件级上下文提取器
+    - name: "cpp-file-context"
+      provider: "http"
+      params:
+        url: "http://localhost:63342/api/cpp-context/file"
+        title: "C++ File Context"
+        description: "当前 C/C++ 文件的完整上下文（函数签名、类定义、宏、include 等）"
+        queryParams:
+          path: "{{filePath}}"
+
+    # 函数级上下文提取器（最适合单元测试生成）
+    - name: "cpp-function-context"
+      provider: "http"
+      params:
+        url: "http://localhost:63342/api/cpp-context/function"
+        title: "C++ Function Context"
+        description: "目标函数的上下文（函数签名、函数体、依赖类型、编译选项）"
+        queryParams:
+          path: "{{filePath}}"
+          name: "{{selectedFunction}}"
+
+    # CMake 编译上下文
+    - name: "cmake-context"
+      provider: "http"
+      params:
+        url: "http://localhost:63342/api/cpp-context/cmake"
+        title: "CMake Build Context"
+        description: "CMake 编译配置（target、编译选项、include 目录、链接库）"

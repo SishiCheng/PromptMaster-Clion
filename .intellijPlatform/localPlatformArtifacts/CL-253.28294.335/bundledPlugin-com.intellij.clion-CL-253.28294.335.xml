@@ -1,0 +1,71 @@
+<ivy-module version="2.0">
+  <info organisation="bundledPlugin" module="com.intellij.clion" revision="CL-253.28294.335" />
+  <configurations>
+    <conf name="default" visibility="public" />
+  </configurations>
+  <publications>
+    <artifact name="clion" ext="jar" conf="default" url="plugins/clion/lib" />
+    <artifact name="intellij.cidr.workspaceModel" ext="jar" conf="default" url="plugins/clion/lib/modules" />
+    <artifact name="intellij.cidr.apinotes" ext="jar" conf="default" url="plugins/clion/lib/modules" />
+    <artifact name="intellij.cidr.projectModel" ext="jar" conf="default" url="plugins/clion/lib/modules" />
+    <artifact name="intellij.clion.toolchains.debugger" ext="jar" conf="default" url="plugins/clion/lib/modules" />
+    <artifact name="intellij.clion.docker" ext="jar" conf="default" url="plugins/clion/lib/modules" />
+    <artifact name="intellij.clion.execution" ext="jar" conf="default" url="plugins/clion/lib/modules" />
+    <artifact name="intellij.clion.toolchains" ext="jar" conf="default" url="plugins/clion/lib/modules" />
+    <artifact name="intellij.cidr.completionMlRanking" ext="jar" conf="default" url="plugins/clion/lib/modules" />
+    <artifact name="intellij.clion.externalSystem" ext="jar" conf="default" url="plugins/clion/lib/modules" />
+    <artifact name="intellij.clion.coverage" ext="jar" conf="default" url="plugins/clion/lib/modules" />
+    <artifact name="intellij.clion.java" ext="jar" conf="default" url="plugins/clion/lib/modules" />
+    <artifact name="intellij.platform.ssh.nio" ext="jar" conf="default" url="plugins/clion/lib/modules" />
+    <artifact name="intellij.clion.webDeployment" ext="jar" conf="default" url="plugins/clion/lib/modules" />
+    <artifact name="intellij.clion.projectStatus" ext="jar" conf="default" url="plugins/clion/lib/modules" />
+    <artifact name="intellij.cidr.externalSystem" ext="jar" conf="default" url="plugins/clion/lib/modules" />
+    <artifact name="intellij.cidr.clangFormat.schema" ext="jar" conf="default" url="plugins/clion/lib/modules" />
+    <artifact name="intellij.cidr.clangFormat.common" ext="jar" conf="default" url="plugins/clion/lib/modules" />
+    <artifact name="intellij.clion.oc" ext="jar" conf="default" url="plugins/clion/lib/modules" />
+    <artifact name="intellij.cidr.lang.base" ext="jar" conf="default" url="plugins/clion/lib/modules" />
+    <artifact name="intellij.cidr.coverage" ext="jar" conf="default" url="plugins/clion/lib/modules" />
+    <artifact name="intellij.cidr.asm" ext="jar" conf="default" url="plugins/clion/lib/modules" />
+    <artifact name="intellij.cidr.translateCode" ext="jar" conf="default" url="plugins/clion/lib/modules" />
+    <artifact name="intellij.clion.webDeployment.remoteRun" ext="jar" conf="default" url="plugins/clion/lib/modules" />
+    <artifact name="intellij.cidr.asm.debugger" ext="jar" conf="default" url="plugins/clion/lib/modules" />
+    <artifact name="intellij.cidr.util" ext="jar" conf="default" url="plugins/clion/lib/modules" />
+    <artifact name="intellij.cidr.util.ui" ext="jar" conf="default" url="plugins/clion/lib/modules" />
+    <artifact name="intellij.cidr.psi.base" ext="jar" conf="default" url="plugins/clion/lib/modules" />
+    <artifact name="intellij.clion.core" ext="jar" conf="default" url="plugins/clion/lib/modules" />
+    <artifact name="intellij.cidr.util.serializer" ext="jar" conf="default" url="plugins/clion/lib/modules" />
+    <artifact name="intellij.cidr.execution" ext="jar" conf="default" url="plugins/clion/lib/modules" />
+  </publications>
+  <dependencies>
+    <dependency org="bundledModule" name="intellij.cidr.asm" rev="CL-253.28294.335" />
+    <dependency org="bundledModule" name="intellij.cidr.asm.debugger" rev="CL-253.28294.335" />
+    <dependency org="bundledModule" name="intellij.cidr.translateCode" rev="CL-253.28294.335" />
+    <dependency org="bundledModule" name="intellij.cidr.lang.base" rev="CL-253.28294.335" />
+    <dependency org="bundledModule" name="intellij.cidr.psi.base" rev="CL-253.28294.335" />
+    <dependency org="bundledModule" name="intellij.cidr.projectModel" rev="CL-253.28294.335" />
+    <dependency org="bundledModule" name="intellij.cidr.execution" rev="CL-253.28294.335" />
+    <dependency org="bundledModule" name="intellij.cidr.workspaceModel" rev="CL-253.28294.335" />
+    <dependency org="bundledModule" name="intellij.cidr.util" rev="CL-253.28294.335" />
+    <dependency org="bundledModule" name="intellij.cidr.util.serializer" rev="CL-253.28294.335" />
+    <dependency org="bundledModule" name="intellij.cidr.util.ui" rev="CL-253.28294.335" />
+    <dependency org="bundledModule" name="intellij.cidr.externalSystem" rev="CL-253.28294.335" />
+    <dependency org="bundledModule" name="intellij.clion.externalSystem" rev="CL-253.28294.335" />
+    <dependency org="bundledModule" name="intellij.clion.core" rev="CL-253.28294.335" />
+    <dependency org="bundledModule" name="intellij.clion.toolchains" rev="CL-253.28294.335" />
+    <dependency org="bundledModule" name="intellij.clion.execution" rev="CL-253.28294.335" />
+    <dependency org="bundledModule" name="intellij.clion.projectStatus" rev="CL-253.28294.335" />
+    <dependency org="bundledModule" name="intellij.platform.ssh.nio" rev="CL-253.28294.335" />
+    <dependency org="bundledPlugin" name="com.intellij.nativeDebug" rev="CL-253.28294.335" />
+    <dependency org="bundledModule" name="intellij.cidr.asm" rev="CL-253.28294.335" />
+    <dependency org="bundledModule" name="intellij.cidr.psi.base" rev="CL-253.28294.335" />
+    <dependency org="bundledModule" name="intellij.cidr.util.serializer" rev="CL-253.28294.335" />
+    <dependency org="bundledModule" name="intellij.platform.backend" rev="CL-253.28294.335" />
+    <dependency org="bundledModule" name="intellij.cidr.projectModel" rev="CL-253.28294.335" />
+    <dependency org="bundledModule" name="intellij.cidr.util.ui" rev="CL-253.28294.335" />
+    <dependency org="bundledModule" name="intellij.cidr.execution" rev="CL-253.28294.335" />
+    <dependency org="bundledModule" name="intellij.cidr.externalSystem" rev="CL-253.28294.335" />
+    <dependency org="bundledModule" name="intellij.clion.projectStatus" rev="CL-253.28294.335" />
+    <dependency org="bundledModule" name="intellij.platform.ssh.nio" rev="CL-253.28294.335" />
+    <dependency org="bundledModule" name="intellij.cidr.translateCode" rev="CL-253.28294.335" />
+  </dependencies>
+</ivy-module>

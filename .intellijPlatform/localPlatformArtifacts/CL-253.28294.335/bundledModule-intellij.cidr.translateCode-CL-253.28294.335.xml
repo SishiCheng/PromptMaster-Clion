@@ -1,0 +1,10 @@
+<ivy-module version="2.0">
+  <info organisation="bundledModule" module="intellij.cidr.translateCode" revision="CL-253.28294.335" />
+  <configurations>
+    <conf name="default" visibility="public" />
+  </configurations>
+  <publications>
+    <artifact name="intellij.cidr.translateCode" ext="jar" conf="default" url="plugins/clion/lib/modules" />
+  </publications>
+  <dependencies />
+</ivy-module>

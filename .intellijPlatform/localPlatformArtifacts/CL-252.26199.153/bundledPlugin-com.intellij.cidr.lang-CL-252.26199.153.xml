@@ -1,0 +1,33 @@
+<ivy-module version="2.0">
+  <info organisation="bundledPlugin" module="com.intellij.cidr.lang" revision="CL-252.26199.153" />
+  <configurations>
+    <conf name="default" visibility="public" />
+  </configurations>
+  <publications>
+    <artifact name="c" ext="jar" conf="default" url="plugins/c/lib" />
+    <artifact name="intellij.c.testing" ext="jar" conf="default" url="plugins/c/lib/modules" />
+    <artifact name="intellij.cidr.intelliLang" ext="jar" conf="default" url="plugins/c/lib/modules" />
+    <artifact name="intellij.c.performanceTesting" ext="jar" conf="default" url="plugins/c/lib/modules" />
+    <artifact name="intellij.c.debugger" ext="jar" conf="default" url="plugins/c/lib/modules" />
+    <artifact name="intellij.cidr.modulemap.language" ext="jar" conf="default" url="plugins/c/lib/modules" />
+    <artifact name="intellij.c.core" ext="jar" conf="default" url="plugins/c/lib/modules" />
+  </publications>
+  <dependencies>
+    <dependency org="bundledModule" name="intellij.c.core" rev="CL-252.26199.153" />
+    <dependency org="bundledModule" name="intellij.c.debugger" rev="CL-252.26199.153" />
+    <dependency org="bundledModule" name="intellij.c.doxygen" rev="CL-252.26199.153" />
+    <dependency org="bundledModule" name="intellij.c.testing" rev="CL-252.26199.153" />
+    <dependency org="bundledModule" name="intellij.cidr.modulemap.language" rev="CL-252.26199.153" />
+    <dependency org="bundledModule" name="intellij.spellchecker" rev="CL-252.26199.153" />
+    <dependency org="bundledModule" name="intellij.cidr.modulemap.language" rev="CL-252.26199.153" />
+    <dependency org="bundledModule" name="intellij.cidr.execution" rev="CL-252.26199.153" />
+    <dependency org="bundledModule" name="intellij.cidr.lang.base" rev="CL-252.26199.153" />
+    <dependency org="bundledModule" name="intellij.cidr.workspaceModel" rev="CL-252.26199.153" />
+    <dependency org="bundledModule" name="intellij.cidr.projectModel" rev="CL-252.26199.153" />
+    <dependency org="bundledModule" name="intellij.cidr.psi.base" rev="CL-252.26199.153" />
+    <dependency org="bundledModule" name="intellij.cidr.util" rev="CL-252.26199.153" />
+    <dependency org="bundledModule" name="intellij.cidr.util.serializer" rev="CL-252.26199.153" />
+    <dependency org="bundledModule" name="intellij.cidr.asm" rev="CL-252.26199.153" />
+    <dependency org="bundledModule" name="intellij.c.core" rev="CL-252.26199.153" />
+  </dependencies>
+</ivy-module>

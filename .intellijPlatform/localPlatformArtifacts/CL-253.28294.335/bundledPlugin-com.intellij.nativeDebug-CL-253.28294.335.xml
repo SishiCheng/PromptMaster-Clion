@@ -1,0 +1,14 @@
+<ivy-module version="2.0">
+  <info organisation="bundledPlugin" module="com.intellij.nativeDebug" revision="CL-253.28294.335" />
+  <configurations>
+    <conf name="default" visibility="public" />
+  </configurations>
+  <publications>
+    <artifact name="nativeDebug-plugin" ext="jar" conf="default" url="plugins/nativeDebug-plugin/lib" />
+    <artifact name="antlr4-runtime" ext="jar" conf="default" url="plugins/nativeDebug-plugin/lib" />
+    <artifact name="nativeDebug-plugin-frontend" ext="jar" conf="default" url="plugins/nativeDebug-plugin/lib" />
+  </publications>
+  <dependencies>
+    <dependency org="bundledPlugin" name="com.intellij.platform.images" rev="CL-253.28294.335" />
+  </dependencies>
+</ivy-module>

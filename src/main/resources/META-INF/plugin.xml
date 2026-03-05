@@ -1,0 +1,40 @@
+<idea-plugin>
+    <id>com.promptmaster.clion</id>
+    <name>PromptMaster-Clion</name>
+    <version>1.0.0</version>
+    <vendor>PromptMaster</vendor>
+
+    <description><![CDATA[
+        Extracts C/C++ project code context (function signatures, class/struct definitions,
+        macros, typedefs, include dependencies, CMake compile options, namespaces) and exposes
+        them via a local HTTP API for AI-assisted unit test generation.
+    ]]></description>
+
+    <!-- CLion only (required) -->
+    <depends>com.intellij.modules.clion</depends>
+
+    <!--
+        Optional dependency on com.intellij.cidr.lang (Classic C/C++ Engine).
+        - CLion 2025.2.x (Classic mode): this plugin IS loaded -> our classloader gets
+          access to OCFile, OCStruct, etc. -> full PSI extraction works.
+        - CLion 2025.3  (Nova/Radler mode): this plugin is SUPPRESSED ->
+          our plugin still loads (because optional), but PSI endpoints
+          return "CIDR PSI not available" errors.
+        config-file must point to a valid descriptor (can be nearly empty).
+    -->
+    <depends optional="true" config-file="withCidrLang.xml">com.intellij.cidr.lang</depends>
+
+    <extensions defaultExtensionNs="com.intellij">
+        <!-- Project-level service -->
+        <projectService
+            serviceImplementation="com.promptmaster.clion.services.ContextExtractionService"/>
+
+        <!-- HTTP endpoint on built-in server -->
+        <httpRequestHandler
+            implementation="com.promptmaster.clion.api.ContextRestService"/>
+
+        <!-- Initialize on project open -->
+        <postStartupActivity
+            implementation="com.promptmaster.clion.services.ContextStartupActivity"/>
+    </extensions>
+</idea-plugin>

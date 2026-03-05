@@ -1,0 +1,78 @@
+# Gradle
+.gradle/
+gradle-app.setting
+!gradle-wrapper.jar
+.gradletasknamecache
+
+# Build directories
+build/
+out/
+*.class
+*.jar
+*.war
+*.rar
+
+# IntelliJ IDEA
+.idea/
+.ideavc/
+*.iml
+*.ipr
+*.iws
+.DS_Store
+*.swp
+*.swo
+*~
+
+# Kotlin
+.kotlinc.log
+hs_err_pid*
+
+# OS specific
+.DS_Store
+Thumbs.db
+*.exe
+*.dmg
+
+# IDE scratch files
+scratch_*
+local.properties
+
+# Project specific
+*.log
+logs/
+*.tmp
+temp/
+
+# Editor backups
+*.bak
+*.backup
+.vscode/
+*.sublime-workspace
+
+# Dependencies (if vendored)
+lib/
+libs/
+
+# Runtime
+plugin.jar
+sandbox/
+cache/
+
+# Test outputs
+test-results/
+**/test-reports/
+coverage/
+
+# Environment files
+.env
+.env.local
+.env.*.local
+
+# Node modules (if any frontend assets)
+node_modules/
+npm-debug.log
+yarn-error.log
+
+# Compiled plugin
+*.zip
+plugin-*.jar

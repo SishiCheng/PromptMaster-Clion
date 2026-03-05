@@ -1,0 +1,12 @@
+<ivy-module version="2.0">
+  <info organisation="bundledModule" module="intellij.cidr.asm.debugger" revision="CL-253.28294.335" />
+  <configurations>
+    <conf name="default" visibility="public" />
+  </configurations>
+  <publications>
+    <artifact name="intellij.cidr.asm.debugger" ext="jar" conf="default" url="plugins/clion/lib/modules" />
+  </publications>
+  <dependencies>
+    <dependency org="bundledModule" name="intellij.cidr.asm" rev="CL-253.28294.335" />
+  </dependencies>
+</ivy-module>

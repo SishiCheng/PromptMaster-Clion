@@ -1,0 +1,14 @@
+<ivy-module version="2.0">
+  <info organisation="bundledPlugin" module="com.intellij.clion" revision="CL-243.23654.114" />
+  <configurations>
+    <conf name="default" visibility="public" />
+  </configurations>
+  <publications>
+    <artifact name="clion-ide" ext="jar" conf="default" url="plugins/clion-ide/lib" />
+    <artifact name="intellij.clion.coverage" ext="jar" conf="default" url="plugins/clion-ide/lib/modules" />
+    <artifact name="intellij.cidr.coverage" ext="jar" conf="default" url="plugins/clion-ide/lib/modules" />
+  </publications>
+  <dependencies>
+    <dependency org="bundledPlugin" name="com.intellij.cidr.base" rev="CL-243.23654.114" />
+  </dependencies>
+</ivy-module>

@@ -1,0 +1,15 @@
+<ivy-module version="2.0">
+  <info organisation="bundledModule" module="intellij.cidr.execution" revision="CL-252.26199.153" />
+  <configurations>
+    <conf name="default" visibility="public" />
+  </configurations>
+  <publications>
+    <artifact name="intellij.cidr.execution" ext="jar" conf="default" url="plugins/clion/lib/modules" />
+  </publications>
+  <dependencies>
+    <dependency org="bundledModule" name="intellij.cidr.lang.base" rev="CL-252.26199.153" />
+    <dependency org="bundledModule" name="intellij.cidr.workspaceModel" rev="CL-252.26199.153" />
+    <dependency org="bundledModule" name="intellij.cidr.util" rev="CL-252.26199.153" />
+    <dependency org="bundledModule" name="intellij.cidr.util.ui" rev="CL-252.26199.153" />
+  </dependencies>
+</ivy-module>
