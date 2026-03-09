@@ -168,6 +168,33 @@ data class FunctionContext(
 )
 
 // ============================================================
+// Unit-test context — VS Code plugin compatible flat format
+// All fields are String or List<String> for easy template use.
+// ============================================================
+
+@Serializable
+data class UnitTestContext(
+    /** Absolute path of the source file. */
+    val modulePath: String,
+    /** Filename without extension (e.g. "sm4_aes"). */
+    val filenameWithoutExt: String,
+    /** Function signature (no body). */
+    val signature: String,
+    /** Full function definition with body (single-element list). */
+    val definition: List<String>,
+    /** Raw source text of struct / class / enum / typedef / global-var definitions from file + headers. */
+    val structDefinitions: List<String>,
+    /** Project-relative paths of resolved #include files. */
+    val headFiles: List<String>,
+    /** "signature @ relative_path" for functions called in body but defined elsewhere. */
+    val externalFunctions: List<String>,
+    /** Raw #define text from file + headers. */
+    val macroDefinitions: List<String>,
+    /** Namespace path of the function (e.g. "ypc::crypto"), empty string if at global scope. */
+    val namespacePath: String = ""
+)
+
+// ============================================================
 // CMake
 // ============================================================
 
@@ -235,5 +262,7 @@ data class HealthResponse(
     /** Whether the classic CIDR PSI API is available (false in CLion 2025.3 Nova/Radler mode). */
     val cidrLangAvailable: Boolean = true,
     /** "classic" when full PSI extraction works; "nova" when PSI is unavailable. */
-    val engineMode: String = "classic"
+    val engineMode: String = "classic",
+    /** "psi" = CIDR PSI extraction (Classic mode); "text" = regex-based extraction (Nova mode). */
+    val extractionMode: String = "psi"
 )

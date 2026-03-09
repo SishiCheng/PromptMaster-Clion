@@ -22,6 +22,7 @@ import com.promptmaster.clion.services.ContextExtractionService
  *   GET /api/cpp-context/function?path=<p>&name=<n>  - Function-level context
  *   GET /api/cpp-context/project                     - Project summary
  *   GET /api/cpp-context/cmake                       - CMake configuration
+ *   GET /api/cpp-context/ut-context?path=<p>&name=<n> - Unit-test context (VS Code format)
  *   GET /api/cpp-context/search?q=<query>            - Symbol search
  *   GET /api/cpp-context/invalidate                  - Invalidate cache
  */
@@ -103,6 +104,25 @@ class ContextRestService : RestService() {
                     }
                 }
 
+                "ut-context" -> {
+                    val filePath = getStringParameter("path", urlDecoder)
+                        ?: return sendJsonError(request, context, "Missing 'path' parameter", HttpResponseStatus.BAD_REQUEST)
+                    val funcName = getStringParameter("name", urlDecoder)
+                        ?: return sendJsonError(request, context, "Missing 'name' parameter", HttpResponseStatus.BAD_REQUEST)
+
+                    val utContext = service.getUnitTestContext(filePath, funcName)
+                    if (utContext != null) {
+                        sendJsonOk(request, context, json.encodeToString(
+                            ApiResponse(success = true, data = utContext)
+                        ))
+                    } else {
+                        sendJsonError(request, context,
+                            "ut-context extraction failed for '$funcName' in $filePath. " +
+                            "Check IDE log (Help > Show Log) for details.",
+                            HttpResponseStatus.NOT_FOUND)
+                    }
+                }
+
                 "project" -> {
                     val projectCtx = service.getProjectContext()
                     sendJsonOk(request, context, json.encodeToString(
@@ -141,7 +161,7 @@ class ContextRestService : RestService() {
                 else -> {
                     sendJsonError(
                         request, context,
-                        "Unknown endpoint: /$subPath. Available: /health, /file, /function, /project, /cmake, /search, /invalidate",
+                        "Unknown endpoint: /$subPath. Available: /health, /file, /function, /ut-context, /project, /cmake, /search, /invalidate",
                         HttpResponseStatus.NOT_FOUND
                     )
                 }

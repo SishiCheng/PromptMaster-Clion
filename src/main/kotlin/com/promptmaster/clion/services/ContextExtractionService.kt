@@ -11,6 +11,8 @@ import com.intellij.openapi.application.ReadAction
 import com.promptmaster.clion.cache.ContextCache
 import com.promptmaster.clion.extraction.CMakeContextExtractor
 import com.promptmaster.clion.extraction.CppContextExtractor
+import com.promptmaster.clion.extraction.TextBasedCppExtractor
+import com.promptmaster.clion.extraction.UnitTestContextExtractor
 import com.promptmaster.clion.models.*
 
 @Service(Service.Level.PROJECT)
@@ -18,11 +20,13 @@ class ContextExtractionService(private val project: Project) : Disposable {
 
     private val logger = Logger.getInstance(ContextExtractionService::class.java)
     private val cppExtractor = CppContextExtractor(project)
+    private val textExtractor = TextBasedCppExtractor(project)
+    private val utExtractor = UnitTestContextExtractor(project)
     private val cmakeExtractor = CMakeContextExtractor(project)
     private val cache = ContextCache()
 
     companion object {
-        const val PLUGIN_VERSION = "1.0.0"
+        const val PLUGIN_VERSION = "1.0.1"
 
         fun getInstance(project: Project): ContextExtractionService {
             return project.getService(ContextExtractionService::class.java)
@@ -36,7 +40,8 @@ class ContextExtractionService(private val project: Project) : Disposable {
     fun getFileContext(filePath: String): FileContext? {
         return cache.getOrCompute("file:$filePath") {
             val vf = resolveFile(filePath) ?: return@getOrCompute null
-            cppExtractor.extractFileContext(vf)
+            // Try PSI-based extraction first; fall back to text-based if unavailable
+            cppExtractor.extractFileContext(vf) ?: textExtractor.extractFileContext(vf)
         }
     }
 
@@ -108,6 +113,16 @@ class ContextExtractionService(private val project: Project) : Disposable {
     }
 
     // ----------------------------------------------------------
+    // Unit-test context (VS Code-compatible flat format)
+    // ----------------------------------------------------------
+
+    fun getUnitTestContext(filePath: String, functionName: String): UnitTestContext? {
+        return cache.getOrCompute("ut-context:$filePath:$functionName") {
+            utExtractor.extract(filePath, functionName)
+        }
+    }
+
+    // ----------------------------------------------------------
     // Symbol search
     // ----------------------------------------------------------
 
@@ -128,6 +143,7 @@ class ContextExtractionService(private val project: Project) : Disposable {
 
     fun invalidateCacheForFile(filePath: String) {
         cache.invalidate("file:$filePath")
+        cache.invalidateByPrefix("ut-context:$filePath:")
         // Also invalidate project summary since it depends on file contents
         cache.invalidate("project")
         logger.debug("Cache invalidated for file: $filePath")
@@ -149,7 +165,8 @@ class ContextExtractionService(private val project: Project) : Disposable {
             pluginVersion = PLUGIN_VERSION,
             projectName = project.name,
             cidrLangAvailable = cidrAvailable,
-            engineMode = if (cidrAvailable) "classic" else "nova"
+            engineMode = if (cidrAvailable) "classic" else "nova",
+            extractionMode = if (cidrAvailable) "psi" else "text"
         )
     }
 
@@ -164,7 +181,7 @@ class ContextExtractionService(private val project: Project) : Disposable {
     private fun collectCppFiles(dir: VirtualFile, result: MutableList<FileSummary>) {
         if (!dir.isDirectory) {
             if (isCppFile(dir)) {
-                val fileCtx = cppExtractor.extractFileContext(dir)
+                val fileCtx = cppExtractor.extractFileContext(dir) ?: textExtractor.extractFileContext(dir)
                 if (fileCtx != null) {
                     result.add(FileSummary(
                         filePath = dir.path,

@@ -1,393 +1,303 @@
 # PromptMaster-Clion
 
-Extracts C/C++ project code context and exposes it via a local HTTP API for AI-assisted unit test generation and code analysis.
+CLion 插件 —— 通过本地 HTTP API 提取 C/C++ 代码上下文，用于 AI 辅助单元测试生成。
 
-## 🎯 核心能力点
-
-### 1. **代码上下文提取**
-- **函数签名提取**：自动识别和提取所有函数声明、返回类型、参数列表和文档注释
-- **类和结构体定义**：解析C++类、结构体的成员变量、方法声明和继承关系
-- **宏定义和typedef**：提取所有预处理指令和类型定义
-- **命名空间识别**：正确处理命名空间嵌套和作用域
-
-### 2. **项目级代码分析**
-- **文件级上下文**：获取完整的文件内容及其依赖关系
-- **函数级查询**：精确定位特定函数的完整上下文
-- **项目摘要**：获取整个项目的高层概览，包括主要模块和结构
-- **符号搜索**：支持全项目符号查询和交叉引用分析
-
-### 3. **构建系统集成**
-- **CMake解析**：提取CMake配置中的编译选项、链接库、目标定义
-- **包含依赖追踪**：完整的#include依赖图分析
-- **编译上下文**：捕获编译时的所有配置信息
-
-### 4. **智能缓存系统**
-- **多级缓存**：文件级和项目级缓存以提高性能
-- **智能失效机制**：基于文件修改时间的增量更新
-- **按需刷新**：提供API接口手动刷新缓存
-
-### 5. **REST API接口**
-- **本地HTTP服务**：在IntelliJ内置服务器上公开的API
-- **JSON序列化**：所有响应使用标准JSON格式
-- **版本兼容性**：支持CLion 2025.2及以上版本
-
-## 🔧 技术实现
-
-### 架构设计
-
-```
-PromptMaster-Clion
-├── API层 (ContextRestService.kt)
-│   └── REST端点处理和HTTP请求路由
-├── 服务层 (services/)
-│   ├── ContextExtractionService - 核心提取服务
-│   └── ContextStartupActivity - 插件启动初始化
-├── 提取器 (extraction/)
-│   ├── CppContextExtractor - C/C++代码解析
-│   └── CMakeContextExtractor - CMake配置解析
-├── 数据模型 (models/)
-│   └── 序列化对象定义
-└── 缓存系统 (cache/)
-    └── 多级缓存实现
-```
-
-### 核心技术栈
-
-| 组件 | 技术 | 版本 |
-|------|------|------|
-| 开发语言 | Kotlin | 2.1.20 |
-| IDE平台 | IntelliJ Platform | 2025.2.2 |
-| 序列化 | Kotlinx Serialization | 1.7.3 |
-| 构建系统 | Gradle | 8.x+ |
-| JVM版本 | Java 21 |
-
-### 代码解析实现
-
-1. **PSI (Program Structure Index) 访问**
-   - 利用IntelliJ的PSI API对C/C++代码进行抽象语法树解析
-   - 支持CLion的两种引擎：Classic (CIDR) 和 Nova (Radler) 模式
-   - 可选依赖处理确保在两种模式下都能运行
-
-2. **C/C++ 语言特性支持**
-   - 函数重载识别
-   - 模板和泛型解析
-   - 类继承和虚函数识别
-   - 宏展开上下文
-
-3. **CMake 配置解析**
-   - 项目级编译标志提取
-   - 链接库和依赖关系分析
-   - 目标定义和属性获取
-
-4. **缓存策略**
-   - **L1缓存**：函数/结构体级别的详细信息缓存
-   - **L2缓存**：文件级别的整体结构缓存
-   - **LRU策略**：自动清理过期缓存条目
-
-### HTTP服务集成
-
-- **端口**：使用IntelliJ内置HTTP服务器的默认端口 (通常为 63342)
-- **认证**：继承IntelliJ的安全机制
-- **CORS**：配置为允许本地开发工具请求
-- **超时处理**：异步处理长运行的代码解析任务
-
-## 📖 用户指导书
-
-### 安装
-
-1. **从市场安装**
-   - 在CLion中打开 Settings → Plugins
-   - 搜索"PromptMaster-Clion"
-   - 点击Install并重启IDE
-
-2. **从本项目构建安装**
-   ```bash
-   ./gradlew buildPlugin
-   ```
-   插件包将生成在 `build/distributions/` 目录中
-   - 在 Settings → Plugins → ⚙️ → Install plugin from disk 选择构建好的ZIP文件
-
-### 快速开始
-
-#### 1. 创建或打开一个C/C++项目
-   - 在CLion中打开包含CMakeLists.txt的C/C++项目
-   - 等待项目索引完成（通常需要几秒钟）
-
-#### 2. 首次初始化
-   - 插件在项目打开时会自动初始化
-   - Check Tools → PromptMaster Console 查看初始化日志（如果需要）
-   - 系统将自动扫描项目并构建代码索引
-
-#### 3. 通过HTTP API访问代码上下文
-   - 基础URL：`http://localhost:63342/api/cpp-context`
-
-### API 端点使用
-
-#### 健康检查
-```bash
-curl http://localhost:63342/api/cpp-context/health
-```
-**响应**：
-```json
-{
-  "status": "ok",
-  "version": "1.0.0",
-  "timestamp": "2025-01-15T10:30:00Z"
-}
-```
-
-#### 获取文件完整上下文
-```bash
-curl "http://localhost:63342/api/cpp-context/file?path=/absolute/path/to/file.cpp"
-```
-**参数**：
-- `path`：文件的绝对路径
-
-**响应**：
-```json
-{
-  "file": "file.cpp",
-  "path": "/absolute/path/to/file.cpp",
-  "includes": ["<vector>", "\"header.h\""],
-  "functions": [
-    {
-      "name": "functionName",
-      "returnType": "void",
-      "parameters": ["int x", "const string& y"],
-      "startLine": 45,
-      "endLine": 67
-    }
-  ],
-  "classes": [
-    {
-      "name": "ClassName",
-      "baseClasses": ["BaseClass"],
-      "members": [...],
-      "startLine": 10,
-      "endLine": 40
-    }
-  ],
-  "macros": [
-    {
-      "name": "MAX_SIZE",
-      "value": "1024",
-      "line": 5
-    }
-  ]
-}
-```
-
-#### 获取函数级上下文
-```bash
-curl "http://localhost:63342/api/cpp-context/function?path=/absolute/path/to/file.cpp&name=functionName"
-```
-**参数**：
-- `path`：文件的绝对路径
-- `name`：函数名称
-
-**响应**：
-```json
-{
-  "name": "functionName",
-  "file": "file.cpp",
-  "returnType": "int",
-  "parameters": [
-    { "name": "x", "type": "int" },
-    { "name": "y", "type": "const string&" }
-  ],
-  "body": "... function implementation code ...",
-  "docComment": "/// Function documentation",
-  "startLine": 45,
-  "endLine": 67
-}
-```
-
-#### 获取项目摘要
-```bash
-curl "http://localhost:63342/api/cpp-context/project?project=MyProject"
-```
-**参数**：
-- `project`：（可选）项目名称；如果包含多个项目，指定具体项目
-
-**响应**：
-```json
-{
-  "projectName": "MyProject",
-  "ROOT": "/path/to/project",
-  "fileCount": 42,
-  "functionCount": 128,
-  "classCount": 18,
-  "cmakeVersion": "3.20",
-  "modules": [
-    {
-      "name": "core",
-      "files": 10,
-      "functions": 35
-    }
-  ]
-}
-```
-
-#### 获取CMake配置信息
-```bash
-curl "http://localhost:63342/api/cpp-context/cmake?project=MyProject"
-```
-**参数**：
-- `project`：（可选）项目名称
-
-**响应**：
-```json
-{
-  "cmakeLists": "/path/to/CMakeLists.txt",
-  "compileFlags": ["-std=c++17", "-Wall", "-O2"],
-  "linkLibraries": ["pthread", "boost_system"],
-  "targets": [
-    {
-      "name": "myapp",
-      "type": "executable",
-      "sources": ["main.cpp", "utils.cpp"]
-    }
-  ],
-  "variables": {
-    "CMAKE_CXX_STANDARD": "17",
-    "CMAKE_BUILD_TYPE": "Release"
-  }
-}
-```
-
-#### 符号搜索
-```bash
-curl "http://localhost:63342/api/cpp-context/search?q=className&type=class"
-```
-**参数**：
-- `q`：搜索查询（函数名、类名、宏名等）
-- `type`：（可选）符号类型：`function`, `class`, `macro`, `typedef`, `all`
-
-**响应**：
-```json
-{
-  "query": "className",
-  "type": "class",
-  "results": [
-    {
-      "name": "className",
-      "type": "class",
-      "file": "definitions.h",
-      "line": 42,
-      "context": "Full class definition..."
-    }
-  ]
-}
-```
-
-#### 刷新缓存
-```bash
-curl -X POST "http://localhost:63342/api/cpp-context/invalidate"
-```
-**参数**：
-- `scope`：（可选）`file` | `project` | `full`（默认为 `full`）
-- `path`：（可选）特定文件路径（仅当 scope=file 时使用）
-
-**响应**：
-```json
-{
-  "status": "success",
-  "message": "Cache invalidated",
-  "scope": "full",
-  "affectedItems": 150
-}
-```
-
-### 常见使用场景
-
-#### 场景1：为特定函数生成单元测试
-```bash
-# 1. 查询函数上下文
-curl "http://localhost:63342/api/cpp-context/function?path=/app/src/math.cpp&name=calculateSum"
-
-# 2. 将响应传给AI模型进行测试生成
-# AI成功理解函数参数、返回类型和实现细节后，生成对应的测试用例
-```
-
-#### 场景2：获取类的完整定义用于重构
-```bash
-# 1. 获取类所在文件的所有上下文
-curl "http://localhost:63342/api/cpp-context/file?path=/app/include/DataManager.h"
-
-# 2. 根据返回的类定义和相关方法，进行重构分析
-```
-
-#### 场景3：分析项目的整体结构
-```bash
-# 获取项目摘要和模块信息
-curl "http://localhost:63342/api/cpp-context/project?project=MyProject"
-
-# 获取编译配置信息
-curl "http://localhost:63342/api/cpp-context/cmake?project=MyProject"
-```
-
-#### 场景4：快速搜索符号定义
-```bash
-# 搜索类定义
-curl "http://localhost:63342/api/cpp-context/search?q=DataManager&type=class"
-
-# 搜索函数
-curl "http://localhost:63342/api/cpp-context/search?q=processData&type=function"
-```
-
-### 性能优化建议
-
-1. **批量查询**
-   - 使用项目级API而非逐个查询单个文件
-   - 利用缓存机制，避免频繁查询相同数据
-
-2. **缓存管理**
-   - 定期刷新缓存以确保数据最新：在大规模代码修改后调用 `/invalidate`
-
-3. **大型项目处理**
-   - 对于文件数超过500的项目，首次索引可能需要较长时间
-   - 可在IDE的后台任务中等待首次索引完成
-
-### 故障排查
-
-| 问题 | 原因 | 解决方案 |
-|------|------|--------|
-| 连接拒绝 | IntelliJ HTTP服务器未启动 | 打开任意项目，服务器会自动启动 |
-| 404错误 | API端点路径错误 | 检查URL格式，确保使用正确的基础路径 |
-| 空响应 | 项目索引未完成 | 等待IDE右下角的进度条完成 |
-| "CIDR PSI not available" | CLion使用Nova模式 | 功能在Nova模式中受限，某些功能可能不可用 |
-| 缓存过期数据 | 文件已修改但缓存未更新 | 手动调用 `/invalidate` 刷新缓存 |
-
-## 📋 系统要求
-
-- **IDE版本**：CLion 2025.2 或更高版本
-- **JVM版本**：Java 21+
-- **操作系统**：macOS, Linux, Windows
-- **内存**：最小2GB（推荐4GB+，用于大型项目）
-- **磁盘空间**：缓存需要约50-500MB，取决于项目大小
-
-## 🔗 相关配置
-
-### CMakeLists.txt 支持
-确保你的项目包含有效的 CMakeLists.txt 文件，此插件可以正确解析编译配置。
-
-### 支持的C++标准
-- C++11, C++14, C++17, C++20, C++23
-
-### IDE插件配置
-插件会在以下位置保存临时缓存和配置：
-- macOS: `~/Library/Caches/JetBrains/CLion2025.x/`
-- Linux: `~/.cache/JetBrains/CLion2025.x/`
-- Windows: `%LOCALAPPDATA%\JetBrains\CLion2025.x\cache`
-
-## 📝 许可证
-
-请参考项目的LICENSE文件。
-
-## 🤝 反馈
-
-遇到问题或有功能建议？欢迎提交Issues。
+支持 CLion **Classic 引擎**（PSI 提取）和 **Nova/Radler 引擎**（文本正则提取），兼容 CLion 2025.2 ~ 2025.3。
 
 ---
 
-**最后更新**: 2025年3月6日 | **版本**: 1.0.0
+# 用户指南
+
+## 系统要求
+
+| 项目 | 要求 |
+|------|------|
+| IDE | CLion 2025.2 或更高版本 |
+| JVM | Java 21+ |
+| 操作系统 | macOS / Linux / Windows |
+
+## 安装
+
+### 方式一：从构建好的 ZIP 安装
+
+1. 获取 `PromptMaster-Clion-x.x.x.zip`（从 Release 页面或同事提供）
+2. 打开 CLion → **Settings → Plugins → ⚙️ → Install Plugin from Disk...**
+3. 选择下载的 ZIP 文件
+4. 重启 CLion
+
+### 方式二：从源码构建
+
+**macOS / Linux：**
+```bash
+git clone <repo-url>
+cd PromptMaster-Clion
+./gradlew clean buildPlugin
+```
+
+**Windows（CMD 或 PowerShell）：**
+```cmd
+git clone <repo-url>
+cd PromptMaster-Clion
+gradlew.bat clean buildPlugin
+```
+
+> **Windows 常见报错**：如果出现 `Unable to access jarfile`，说明 `gradle/wrapper/gradle-wrapper.jar` 缺失。
+> 请确认项目中包含 `gradle/wrapper/gradle-wrapper.jar` 文件。如果没有，运行：
+> ```cmd
+> gradle wrapper --gradle-version=8.13
+> ```
+> 然后重新执行 `gradlew.bat clean buildPlugin`。
+
+构建完成后，ZIP 包在 `build/distributions/` 目录中。按上述"方式一"的步骤安装到 CLion。
+
+## 快速开始
+
+1. 在 CLion 中打开一个 C/C++ 项目
+2. 等待项目索引完成
+3. 插件自动启动，无需手动配置
+4. 通过 HTTP API 访问代码上下文：
+
+```bash
+# 健康检查
+curl http://localhost:63342/api/cpp-context/health
+```
+
+响应示例：
+```json
+{
+    "status": "ok",
+    "pluginVersion": "1.0.1",
+    "projectName": "MyProject",
+    "cidrLangAvailable": true,
+    "engineMode": "classic",
+    "extractionMode": "psi"
+}
+```
+
+## API 端点参考
+
+基础 URL：`http://localhost:63342/api/cpp-context`
+
+所有端点返回 JSON，格式为 `{ "success": true/false, "data": ..., "error": "..." }`。
+
+### GET /health
+
+健康检查，返回插件版本和引擎模式。
+
+```bash
+curl http://localhost:63342/api/cpp-context/health
+```
+
+### GET /file?path=\<abs_path\>
+
+获取文件的完整上下文（函数、结构体、枚举、宏、include 等）。
+
+```bash
+curl "http://localhost:63342/api/cpp-context/file?path=/home/user/project/src/main.cpp"
+```
+
+### GET /function?path=\<p\>&name=\<n\>
+
+获取指定函数的上下文，包含函数签名、参数、函数体，以及相关的类型定义和 CMake 编译上下文。
+
+```bash
+curl "http://localhost:63342/api/cpp-context/function?path=/home/user/project/src/main.cpp&name=processData"
+```
+
+### GET /ut-context?path=\<p\>&name=\<n\>
+
+**核心端点** —— 获取单元测试生成所需的上下文，输出扁平 string/string[] 格式（与 VS Code CodeArtsX-IDE 插件兼容）。
+
+```bash
+curl "http://localhost:63342/api/cpp-context/ut-context?path=/home/user/project/src/crypto/sm4_aes.cpp&name=encrypt_with_prefix"
+```
+
+响应示例：
+```json
+{
+    "success": true,
+    "data": {
+        "modulePath": "/home/user/project/src/crypto/sm4_aes.cpp",
+        "filenameWithoutExt": "sm4_aes",
+        "signature": "uint32_t sm4_aes::encrypt_with_prefix(const uint8_t *key, uint32_t key_size, ...)",
+        "definition": ["uint32_t sm4_aes::encrypt_with_prefix(...) {\n  ...\n}"],
+        "structDefinitions": ["struct SM4_KEY {\n  ...\n};"],
+        "headFiles": ["src/crypto/sm4_aes.h", "include/stbox/gmssl/sm4.h"],
+        "externalFunctions": ["void sm4_set_encrypt_key(SM4_KEY *key, const uint8_t *user_key) @ include/stbox/gmssl/sm4.h"],
+        "macroDefinitions": ["#define AAD_MAC_TEXT_LEN 64"],
+        "namespacePath": "ypc::crypto"
+    }
+}
+```
+
+**字段说明：**
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| `modulePath` | string | 源文件绝对路径 |
+| `filenameWithoutExt` | string | 无后缀文件名 |
+| `signature` | string | 函数签名（不含函数体） |
+| `definition` | string[] | 完整函数定义含函数体（单元素数组） |
+| `structDefinitions` | string[] | 相关的 struct/class/enum/typedef 原文（从文件和头文件中提取） |
+| `headFiles` | string[] | 解析后的 #include 项目相对路径 |
+| `externalFunctions` | string[] | 外部函数调用，格式：`"签名 @ 相对路径"` |
+| `macroDefinitions` | string[] | 相关的 #define 宏原文 |
+| `namespacePath` | string | 函数所在的命名空间路径（如 `"ypc::crypto"`），全局作用域为空字符串 |
+
+### GET /project
+
+获取项目摘要（文件列表、函数名、结构体名等）。
+
+```bash
+curl http://localhost:63342/api/cpp-context/project
+```
+
+### GET /cmake
+
+获取 CMake 配置信息（targets、编译选项、链接库等）。
+
+```bash
+curl http://localhost:63342/api/cpp-context/cmake
+```
+
+### GET /search?q=\<query\>
+
+全项目符号搜索。
+
+```bash
+curl "http://localhost:63342/api/cpp-context/search?q=encrypt"
+```
+
+### GET /invalidate
+
+清空所有缓存，强制下次请求重新解析。
+
+```bash
+curl http://localhost:63342/api/cpp-context/invalidate
+```
+
+## CLion 引擎模式
+
+| 模式 | CLion 版本 | 提取方式 | 说明 |
+|------|-----------|---------|------|
+| **Classic** | 2025.2.x | PSI（语法树）| 通过 CIDR PSI API 提取，精度最高 |
+| **Nova/Radler** | 2025.3+ | 文本正则 | CIDR PSI 被禁用，使用正则 + 括号深度匹配提取 |
+
+插件会自动检测引擎模式，通过 `/health` 端点的 `engineMode` 和 `extractionMode` 字段可以确认。
+
+## 故障排查
+
+| 问题 | 原因 | 解决方案 |
+|------|------|--------|
+| 连接被拒绝 | IntelliJ HTTP 服务器未启动 | 打开任意项目，服务器自动启动 |
+| 404 错误 | 端点路径错误 | 确认 URL 以 `/api/cpp-context/` 开头 |
+| "Function not found" | 函数提取失败 | 检查 CLion 日志（Help → Show Log），查看详细错误 |
+| 缓存数据过期 | 文件修改后未更新 | 调用 `/invalidate` 刷新缓存 |
+| Windows 构建 "unable to access jarfile" | `gradle-wrapper.jar` 缺失 | 运行 `gradle wrapper --gradle-version=8.13`，或从仓库重新 clone |
+
+---
+
+# 开发者指南
+
+## 项目结构
+
+```
+PromptMaster-Clion/
+├── src/main/kotlin/com/promptmaster/clion/
+│   ├── api/
+│   │   └── ContextRestService.kt          # REST 端点（Netty HTTP handler）
+│   ├── services/
+│   │   ├── ContextExtractionService.kt    # 核心服务（缓存 + 调度）
+│   │   └── ContextStartupActivity.kt     # 项目启动初始化
+│   ├── extraction/
+│   │   ├── CppContextExtractor.kt        # PSI 模式提取（Classic 引擎）
+│   │   ├── TextBasedCppExtractor.kt      # 文本模式提取（Nova 引擎）
+│   │   ├── UnitTestContextExtractor.kt   # ut-context 提取器
+│   │   └── CMakeContextExtractor.kt      # CMake 配置提取
+│   ├── cache/
+│   │   ├── ContextCache.kt              # TTL 内存缓存
+│   │   └── CacheInvalidator.kt          # PSI 变更监听器
+│   └── models/
+│       └── Models.kt                    # 所有数据类
+├── src/main/resources/META-INF/
+│   ├── plugin.xml                       # 插件描述符
+│   └── withCidrLang.xml                 # 可选依赖描述符
+├── build.gradle.kts
+├── gradle.properties
+└── docs/
+    └── extraction-methodology.md        # 提取方法详解文档
+```
+
+## 技术栈
+
+| 组件 | 技术 | 版本 |
+|------|------|------|
+| 语言 | Kotlin | 2.1.20 |
+| IDE 平台 | IntelliJ Platform SDK | 2025.2.2 |
+| 序列化 | Kotlinx Serialization | 1.7.3 |
+| 构建 | Gradle + IntelliJ Platform Plugin | 8.13 / 2.11.0 |
+| JVM | Java | 21 |
+
+## 架构概览
+
+```
+HTTP 请求 (port 63342)
+    │
+    ▼
+ContextRestService          ← REST 路由分发
+    │
+    ▼
+ContextExtractionService    ← 缓存层 + 提取调度
+    │
+    ├── CppContextExtractor        ← PSI 模式（反射加载 OCFile）
+    ├── TextBasedCppExtractor      ← 文本模式（正则 + 深度匹配）
+    ├── UnitTestContextExtractor   ← ut-context 编排
+    └── CMakeContextExtractor      ← CMake 反射提取
+    │
+    ▼
+ContextCache (5 min TTL)    ← ConcurrentHashMap + PSI 变更监听失效
+```
+
+**关键设计决策**：
+- `com.intellij.cidr.lang` 声明为 **optional dependency**，确保 Nova 模式下插件仍能加载
+- `CppContextExtractor` 使用**反射**加载 `OCFile` 等 CIDR 类，避免编译时硬依赖
+- `TextBasedCppExtractor` 使用**括号深度匹配**而非纯正则，处理多行函数签名
+- `ConcurrentHashMap` 不能存 `null`，用 sentinel 值替代
+
+## 构建与调试
+
+### 构建
+
+```bash
+# macOS / Linux
+./gradlew clean buildPlugin
+
+# Windows
+gradlew.bat clean buildPlugin
+```
+
+输出：`build/distributions/PromptMaster-Clion-x.x.x.zip`
+
+### 在 IDE 中调试
+
+1. 用 IntelliJ IDEA 打开本项目
+2. 运行 `Run Plugin`（Gradle task: `runIde`），会启动一个带插件的 CLion 沙箱实例
+3. 在沙箱 CLion 中打开一个 C/C++ 项目
+4. 用 `curl` 测试 API
+
+### 常见构建问题
+
+| 问题 | 解决方案 |
+|------|--------|
+| `Unable to access jarfile` (Windows) | 确认 `gradle/wrapper/gradle-wrapper.jar` 存在；或运行 `gradle wrapper --gradle-version=8.13` |
+| Kotlin 版本不兼容 | 确认 `build.gradle.kts` 中 Kotlin 版本为 2.1.20 |
+| CLion SDK 下载磁盘不足 | 清理 `~/.gradle/caches/` 下的旧 SDK 缓存 |
+| `plugin.xml` 修改不生效 | 执行 `clean` 再 `buildPlugin`（Gradle 增量构建可能不更新资源） |
+
+## 提取方法详解
+
+详见 [docs/extraction-methodology.md](docs/extraction-methodology.md)。
+
+---
+
+**版本**: 1.0.1 | **兼容**: CLion 2025.2 ~ 2025.3
