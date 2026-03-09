@@ -56,7 +56,6 @@ libs/
 # Runtime
 plugin.jar
 sandbox/
-cache/
 
 # Test outputs
 test-results/
