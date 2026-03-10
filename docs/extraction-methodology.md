@@ -38,7 +38,7 @@ CLion 有两种 C/C++ 解析引擎：
 
 | 引擎 | CLion 版本 | PSI API | 本插件策略 |
 |------|-----------|---------|-----------|
-| **Classic (CIDR)** | 2025.2.x | `OCFile`, `OCStruct`, `OCFunctionDeclaration` 可用 | `CppContextExtractor` 通过 PSI 提取，精度最高 |
+| **Classic (CIDR)** | 2024.2 ~ 2025.2.x | `OCFile`, `OCStruct`, `OCFunctionDeclaration` 可用 | `CppContextExtractor` 通过 PSI 提取，精度最高 |
 | **Nova (Radler)** | 2025.3+ | CIDR PSI 被系统禁用 (`-Didea.suppressed.plugins.set.selector=radler`) | `TextBasedCppExtractor` 通过正则 + 深度匹配提取 |
 
 **为什么用 optional dependency？**
@@ -348,7 +348,8 @@ doExtract(filePath, functionName)
     ├── 9. findExternalFunctions()
     │      a) 从 body 中提取 identifier( 模式的函数调用
     │      b) 减去本地函数名 + C++ 关键字 + 标准库函数
-    │      c) 先搜头文件，再搜项目
+    │         （本地函数名来自 fileCtx.functions 或 extractFunctionNamesFromText 回退）
+    │      c) 先搜头文件，再用 java.io.File 搜项目
     │      → externalFunctions 字段
     │
     └── 10. function.namespacePath.joinToString("::")
@@ -357,27 +358,43 @@ doExtract(filePath, functionName)
 
 ### Include 解析的三级搜索策略
 
+> **重要变更**：所有文件系统操作使用 `java.io.File` 而非 IntelliJ VFS，
+> 确保 Nova 模式下即使 VFS 未被 Classic 引擎预填充也能正常工作。
+
 ```kotlin
 private fun doResolveInclude(includePath: String, isSystem: Boolean, sourceFile: String): String? {
     // 级别 1：相对于源文件目录（仅 quoted include "..."）
-    val srcDir = findFileByPath(sourceFile)?.parent
-    val found = srcDir?.findFileByRelativePath(includePath)
-
-    // 级别 2：相对于项目 content root
-    for (root in ProjectRootManager.contentRoots) {
-        root.findFileByRelativePath(includePath)
+    if (!isSystem) {
+        val srcDir = IoFile(sourceFile).parentFile
+        val candidate = IoFile(srcDir, includePath)
+        if (candidate.isFile) return normalizeFsPath(candidate)
     }
 
-    // 级别 3：按文件名递归搜索整个项目
-    for (root in contentRoots) {
-        searchFileRecursive(root, includePath, fileName)
+    // 级别 2：相对于项目 content root + basePath
+    for (rootPath in getSearchRoots()) {
+        val candidate = IoFile(rootPath, includePath)
+        if (candidate.isFile) return normalizeFsPath(candidate)
     }
+
+    // 级别 3：按文件名递归搜索整个项目（使用 java.io.File.listFiles）
+    val fileName = includePath.substringAfterLast('/')
+    for (rootPath in getSearchRoots()) {
+        val found = searchFileOnDisk(IoFile(rootPath), includePath, fileName)
+        if (found != null) return normalizeFsPath(found)
+    }
+
+    return null
 }
 ```
 
 **为什么需要级别 3？** 因为很多项目的 include 路径不完全对应目录结构。
 例如 `#include "ypc/stbox/gmssl/sm4.h"` 的实际文件可能在 `vendor/gmssl/include/sm4.h`。
 通过递归搜索项目中所有同名文件，找到匹配的路径。
+
+**为什么用 `java.io.File` 而非 VFS？** IntelliJ 的 VFS 是懒加载的。在 Nova 模式下，
+如果用户从未使用过 Classic 引擎，VFS 可能没有索引整个项目的文件树。`java.io.File` 直接
+操作操作系统文件系统，不受 VFS 状态影响。读取文件时先尝试 VFS（速度更快），失败则回退到
+`java.io.File.readText()`。
 
 结果缓存在 `ConcurrentHashMap` 中，避免重复搜索。
 
@@ -403,13 +420,13 @@ private fun doResolveInclude(includePath: String, isSystem: Boolean, sourceFile:
 }
 
 排除规则：
-  - 本地文件中的函数（fileCtx.functions）
+  - 本地文件中的函数（fileCtx.functions 或文件文本 fallback 提取）
   - C++ 关键字（if, for, return, sizeof, ...）
   - 标准库函数（printf, malloc, memcpy, make_shared, ...）
 
 搜索策略：
-  1. 先在已解析的头文件中搜索
-  2. 如果仍有未找到的函数，扩大到项目全局搜索
+  1. 先在已解析的头文件中搜索（使用 readTextByPath：VFS → java.io.File 回退）
+  2. 如果仍有未找到的函数，使用 java.io.File 遍历项目目录全局搜索
 ```
 
 ---

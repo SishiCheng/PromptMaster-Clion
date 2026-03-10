@@ -13,7 +13,7 @@ CLion 插件 —— 通过本地 HTTP API 提取 C/C++ 代码上下文，用于 
 | 项目 | 要求 |
 |------|------|
 | IDE | CLion 2024.2 或更高版本（2024.2 ~ 2025.3 已验证）|
-| JVM | Java 21+ |
+| JVM | Java 17+ |
 | 操作系统 | macOS / Linux / Windows |
 
 ## 安装
@@ -66,7 +66,7 @@ curl http://localhost:63342/api/cpp-context/health
 ```json
 {
     "status": "ok",
-    "pluginVersion": "1.0.1",
+    "pluginVersion": "1.1.0",
     "projectName": "MyProject",
     "cidrLangAvailable": true,
     "engineMode": "classic",
@@ -226,6 +226,7 @@ curl http://localhost:63342/api/cpp-context/invalidate
 | Windows curl 命令被截断 | `&` 被 CMD/PowerShell 解释为命令分隔符 | 用双引号包住整个 URL：`curl "http://...?path=D:/...&name=func"` |
 | Windows 路径 "File not found" | 路径使用了反斜杠 | 将 `\` 换为 `/`，例如 `D:\src\file.cpp` → `D:/src/file.cpp` |
 | PowerShell curl 返回 StatusCode/RawContent 等字段 | PowerShell 的 `curl` 是 `Invoke-WebRequest` 的别名，不是真正的 curl | 改用 `curl.exe "..."` 或 `Invoke-RestMethod "..."` |
+| Windows 安装后仍 404 | 插件未实际安装成功 | Settings → Plugins 确认 PromptMaster 在列表中且启用；如果没有，卸载后重新 Install Plugin from Disk，重启 CLion |
 | Windows 构建 "unable to access jarfile" | `gradle-wrapper.jar` 缺失 | 运行 `gradle wrapper --gradle-version=8.13`，或从仓库重新 clone |
 
 ---
@@ -266,10 +267,10 @@ PromptMaster-Clion/
 | 组件 | 技术 | 版本 |
 |------|------|------|
 | 语言 | Kotlin | 1.9.25 |
-| IDE 平台 | IntelliJ Platform SDK | 2024.2.5（构建基准，兼容至 2025.3）|
+| IDE 平台 | IntelliJ Platform SDK | 2024.2.2（构建基准，兼容至 2025.3）|
 | 序列化 | Kotlinx Serialization | 1.6.3 |
 | 构建 | Gradle + IntelliJ Platform Plugin | 8.13 / 2.11.0 |
-| JVM | Java | 21 |
+| JVM | Java | 17+（字节码目标 17，兼容 JBR 17 和 JBR 21）|
 
 ## 架构概览
 
@@ -324,7 +325,7 @@ gradlew.bat clean buildPlugin
 | 问题 | 解决方案 |
 |------|--------|
 | `Unable to access jarfile` (Windows) | 确认 `gradle/wrapper/gradle-wrapper.jar` 存在；或运行 `gradle wrapper --gradle-version=8.13` |
-| Kotlin 版本不兼容 | 确认 `build.gradle.kts` 中 Kotlin 版本为 2.1.20 |
+| Kotlin 版本不兼容 | 确认 `build.gradle.kts` 中 Kotlin 版本为 1.9.25 |
 | CLion SDK 下载磁盘不足 | 清理 `~/.gradle/caches/` 下的旧 SDK 缓存 |
 | `plugin.xml` 修改不生效 | 执行 `clean` 再 `buildPlugin`（Gradle 增量构建可能不更新资源） |
 
