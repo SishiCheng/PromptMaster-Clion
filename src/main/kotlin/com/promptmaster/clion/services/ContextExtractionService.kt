@@ -1,8 +1,11 @@
 package com.promptmaster.clion.services
 
 import com.intellij.openapi.Disposable
+import com.intellij.openapi.application.ApplicationManager
+import com.intellij.openapi.application.ModalityState
 import com.intellij.openapi.components.Service
 import com.intellij.openapi.diagnostic.Logger
+import com.intellij.openapi.fileEditor.FileEditorManager
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.roots.ProjectRootManager
 import com.intellij.openapi.vfs.LocalFileSystem
@@ -24,14 +27,6 @@ class ContextExtractionService(private val project: Project) : Disposable {
     private val utExtractor = UnitTestContextExtractor(project)
     private val cmakeExtractor = CMakeContextExtractor(project)
     private val cache = ContextCache()
-
-    companion object {
-        const val PLUGIN_VERSION = "1.1.0"
-
-        fun getInstance(project: Project): ContextExtractionService {
-            return project.getService(ContextExtractionService::class.java)
-        }
-    }
 
     // ----------------------------------------------------------
     // File-level context
@@ -119,6 +114,106 @@ class ContextExtractionService(private val project: Project) : Disposable {
     fun getUnitTestContext(filePath: String, functionName: String): UnitTestContext? {
         return cache.getOrCompute("ut-context:$filePath:$functionName") {
             utExtractor.extract(filePath, functionName)
+        }
+    }
+
+    /**
+     * Auto-detect file path and function name from the current editor cursor,
+     * then extract unit-test context.
+     *
+     * This allows callers (e.g. Continue) to invoke the API with no parameters:
+     *   GET /api/cpp-context/ut-context
+     *
+     * The IDE's active editor and caret position determine which function to extract.
+     */
+    fun getUnitTestContextFromCursor(): UnitTestContext? {
+        val info = getCurrentCursorInfo()
+        if (info == null) {
+            logger.warn("ut-context auto: no active C/C++ editor or cursor is not inside a function")
+            return null
+        }
+        logger.info("ut-context auto: detected function '${info.functionName}' in ${info.filePath} (line ${info.cursorLine})")
+        return getUnitTestContext(info.filePath, info.functionName)
+    }
+
+    // ----------------------------------------------------------
+    // Cursor detection helpers
+    // ----------------------------------------------------------
+
+    /** Information resolved from the current editor cursor. */
+    data class CursorInfo(val filePath: String, val functionName: String, val cursorLine: Int)
+
+    /**
+     * Read the active editor's file path and determine which function the caret is inside.
+     *
+     * Editor state (selected editor, caret position) must be accessed on the EDT.
+     * This method blocks until the EDT delivers the result.
+     */
+    private fun getCurrentCursorInfo(): CursorInfo? {
+        var result: CursorInfo? = null
+        ApplicationManager.getApplication().invokeAndWait({
+            try {
+                val editor = FileEditorManager.getInstance(project).selectedTextEditor
+                    ?: return@invokeAndWait
+                val selectedFiles = FileEditorManager.getInstance(project).selectedFiles
+                val vf = selectedFiles.firstOrNull() ?: return@invokeAndWait
+
+                // Only handle C/C++ files
+                val ext = vf.extension?.lowercase() ?: return@invokeAndWait
+                if (ext !in CPP_EXTENSIONS) return@invokeAndWait
+
+                val caretLine = editor.caretModel.logicalPosition.line + 1  // 1-based
+                val fileText = editor.document.text
+
+                val funcName = findFunctionAtLine(fileText, caretLine)
+                if (funcName != null) {
+                    result = CursorInfo(vf.path, funcName, caretLine)
+                }
+            } catch (e: Throwable) {
+                logger.warn("ut-context auto: failed to read cursor info", e)
+            }
+        }, ModalityState.any())
+        return result
+    }
+
+    /**
+     * Find the function whose body contains the given line number.
+     *
+     * Strategy: extract all functions with their start line numbers, then pick
+     * the one with the largest lineNumber that is still <= targetLine.
+     * This works because functions are non-overlapping in C/C++.
+     */
+    private fun findFunctionAtLine(fileText: String, targetLine: Int): String? {
+        val ctx = textExtractor.extractFileContext(fileText, "", "")
+            ?: return null
+
+        val sortedFuncs = ctx.functions
+            .filter { it.lineNumber > 0 }
+            .sortedBy { it.lineNumber }
+
+        if (sortedFuncs.isEmpty()) return null
+
+        // Walk sorted list; pick the last function that starts at or before targetLine
+        var best: FunctionInfo? = null
+        for (func in sortedFuncs) {
+            if (func.lineNumber <= targetLine) {
+                best = func
+            } else {
+                break
+            }
+        }
+        return best?.name
+    }
+
+    companion object {
+        const val PLUGIN_VERSION = "1.1.0"
+
+        private val CPP_EXTENSIONS = setOf(
+            "c", "cpp", "cc", "cxx", "h", "hpp", "hxx", "hh"
+        )
+
+        fun getInstance(project: Project): ContextExtractionService {
+            return project.getService(ContextExtractionService::class.java)
         }
     }
 

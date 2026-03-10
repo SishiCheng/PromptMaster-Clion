@@ -134,11 +134,17 @@ curl "http://localhost:63342/api/cpp-context/file?path=/home/user/project/src/ma
 curl "http://localhost:63342/api/cpp-context/function?path=/home/user/project/src/main.cpp&name=processData"
 ```
 
-### GET /ut-context?path=\<p\>&name=\<n\>
+### GET /ut-context
 
 **核心端点** —— 获取单元测试生成所需的上下文，输出扁平 string/string[] 格式（与 VS Code CodeArtsX-IDE 插件兼容）。
 
+**参数可选**：`path` 和 `name` 都不传时，自动从 CLion 当前编辑器的光标位置检测文件路径和函数名。
+
 ```bash
+# 方式一：自动模式（推荐） —— 光标放在函数内，直接调用
+curl http://localhost:63342/api/cpp-context/ut-context
+
+# 方式二：显式模式 —— 指定文件路径和函数名
 curl "http://localhost:63342/api/cpp-context/ut-context?path=/home/user/project/src/crypto/sm4_aes.cpp&name=encrypt_with_prefix"
 ```
 
@@ -226,6 +232,7 @@ curl http://localhost:63342/api/cpp-context/invalidate
 | Windows curl 命令被截断 | `&` 被 CMD/PowerShell 解释为命令分隔符 | 用双引号包住整个 URL：`curl "http://...?path=D:/...&name=func"` |
 | Windows 路径 "File not found" | 路径使用了反斜杠 | 将 `\` 换为 `/`，例如 `D:\src\file.cpp` → `D:/src/file.cpp` |
 | PowerShell curl 返回 StatusCode/RawContent 等字段 | PowerShell 的 `curl` 是 `Invoke-WebRequest` 的别名，不是真正的 curl | 改用 `curl.exe "..."` 或 `Invoke-RestMethod "..."` |
+| ut-context 自动模式失败 | 光标不在函数体内或当前文件不是 C/C++ | 将光标放在目标函数的花括号内，确保当前编辑器打开的是 `.cpp`/`.c`/`.h` 文件 |
 | Windows 安装后仍 404 | 插件未实际安装成功 | Settings → Plugins 确认 PromptMaster 在列表中且启用；如果没有，卸载后重新 Install Plugin from Disk，重启 CLion |
 | Windows 构建 "unable to access jarfile" | `gradle-wrapper.jar` 缺失 | 运行 `gradle wrapper --gradle-version=8.13`，或从仓库重新 clone |
 

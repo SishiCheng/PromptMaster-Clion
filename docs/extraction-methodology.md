@@ -308,6 +308,30 @@ uint32_t sm4_aes::encrypt... ← 当前位置 offset
 
 这是 `/ut-context` 端点的核心实现，编排整个提取流水线。
 
+### 光标自动检测（v1.1.0 新增）
+
+`/ut-context` 端点的 `path` 和 `name` 参数现在是可选的。不传参数时，插件通过
+`ContextExtractionService.getUnitTestContextFromCursor()` 自动检测：
+
+```
+GET /api/cpp-context/ut-context  （无参数）
+    │
+    ▼
+getCurrentCursorInfo()                  ← 在 EDT 上访问编辑器状态
+    │
+    ├── FileEditorManager.selectedTextEditor    ← 获取当前活跃编辑器
+    ├── selectedFiles[0].path                   ← 获取文件绝对路径
+    ├── editor.caretModel.logicalPosition.line  ← 获取光标行号（0-based → 1-based）
+    │
+    ▼
+findFunctionAtLine(fileText, caretLine)  ← 用 TextBasedCppExtractor 提取所有函数
+    │                                       找到 lineNumber ≤ caretLine 的最近函数
+    ▼
+getUnitTestContext(filePath, funcName)   ← 复用已有的提取流水线
+```
+
+Continue 等外部调用方只需 `GET /api/cpp-context/ut-context`，无需传任何参数。
+
 ### 提取流水线（9 个字段）
 
 ```

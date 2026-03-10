@@ -22,7 +22,7 @@ import com.promptmaster.clion.services.ContextExtractionService
  *   GET /api/cpp-context/function?path=<p>&name=<n>  - Function-level context
  *   GET /api/cpp-context/project                     - Project summary
  *   GET /api/cpp-context/cmake                       - CMake configuration
- *   GET /api/cpp-context/ut-context?path=<p>&name=<n> - Unit-test context (VS Code format)
+ *   GET /api/cpp-context/ut-context?path=<p>&name=<n> - Unit-test context (params optional, auto-detects from cursor)
  *   GET /api/cpp-context/search?q=<query>            - Symbol search
  *   GET /api/cpp-context/invalidate                  - Invalidate cache
  */
@@ -105,21 +105,30 @@ class ContextRestService : RestService() {
                 }
 
                 "ut-context" -> {
-                    val filePath = normalizePath(getStringParameter("path", urlDecoder)
-                        ?: return sendJsonError(request, context, "Missing 'path' parameter", HttpResponseStatus.BAD_REQUEST))
+                    val filePath = getStringParameter("path", urlDecoder)?.let { normalizePath(it) }
                     val funcName = getStringParameter("name", urlDecoder)
-                        ?: return sendJsonError(request, context, "Missing 'name' parameter", HttpResponseStatus.BAD_REQUEST)
 
-                    val utContext = service.getUnitTestContext(filePath, funcName)
+                    val utContext = if (filePath != null && funcName != null) {
+                        // Explicit mode: caller provides both path and function name
+                        service.getUnitTestContext(filePath, funcName)
+                    } else {
+                        // Auto mode: detect from current editor cursor
+                        service.getUnitTestContextFromCursor()
+                    }
+
                     if (utContext != null) {
                         sendJsonOk(request, context, json.encodeToString(
                             ApiResponse(success = true, data = utContext)
                         ))
                     } else {
-                        sendJsonError(request, context,
+                        val errorMsg = if (filePath == null || funcName == null) {
+                            "Auto-detect failed: no active C/C++ editor, or cursor is not inside a function. " +
+                            "Either place the cursor inside a function, or provide 'path' and 'name' parameters."
+                        } else {
                             "ut-context extraction failed for '$funcName' in $filePath. " +
-                            "Check IDE log (Help > Show Log) for details.",
-                            HttpResponseStatus.NOT_FOUND)
+                            "Check IDE log (Help > Show Log) for details."
+                        }
+                        sendJsonError(request, context, errorMsg, HttpResponseStatus.NOT_FOUND)
                     }
                 }
 
