@@ -1,7 +1,7 @@
 <idea-plugin>
     <id>com.promptmaster.clion</id>
     <name>PromptMaster-Clion</name>
-    <version>1.0.0</version>
+    <version>1.1.0</version>
     <vendor>PromptMaster</vendor>
 
     <description><![CDATA[
@@ -15,11 +15,10 @@
 
     <!--
         Optional dependency on com.intellij.cidr.lang (Classic C/C++ Engine).
-        - CLion 2025.2.x (Classic mode): this plugin IS loaded -> our classloader gets
-          access to OCFile, OCStruct, etc. -> full PSI extraction works.
-        - CLion 2025.3  (Nova/Radler mode): this plugin is SUPPRESSED ->
-          our plugin still loads (because optional), but PSI endpoints
-          return "CIDR PSI not available" errors.
+        - CLion 2024.2.x:       always available -> full PSI extraction works.
+        - CLion 2025.2.x:       Classic mode -> PSI available; Nova mode -> suppressed.
+        - CLion 2025.3 (Nova):  suppressed -> our plugin still loads (because optional),
+                                falls back to text-based extraction.
         config-file must point to a valid descriptor (can be nearly empty).
     -->
     <depends optional="true" config-file="withCidrLang.xml">com.intellij.cidr.lang</depends>

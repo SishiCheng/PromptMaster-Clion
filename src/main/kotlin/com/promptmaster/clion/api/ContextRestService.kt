@@ -75,8 +75,8 @@ class ContextRestService : RestService() {
                 }
 
                 "file" -> {
-                    val filePath = getStringParameter("path", urlDecoder)
-                        ?: return sendJsonError(request, context, "Missing 'path' parameter", HttpResponseStatus.BAD_REQUEST)
+                    val filePath = normalizePath(getStringParameter("path", urlDecoder)
+                        ?: return sendJsonError(request, context, "Missing 'path' parameter", HttpResponseStatus.BAD_REQUEST))
 
                     val fileCtx = service.getFileContext(filePath)
                     if (fileCtx != null) {
@@ -89,8 +89,8 @@ class ContextRestService : RestService() {
                 }
 
                 "function" -> {
-                    val filePath = getStringParameter("path", urlDecoder)
-                        ?: return sendJsonError(request, context, "Missing 'path' parameter", HttpResponseStatus.BAD_REQUEST)
+                    val filePath = normalizePath(getStringParameter("path", urlDecoder)
+                        ?: return sendJsonError(request, context, "Missing 'path' parameter", HttpResponseStatus.BAD_REQUEST))
                     val funcName = getStringParameter("name", urlDecoder)
                         ?: return sendJsonError(request, context, "Missing 'name' parameter", HttpResponseStatus.BAD_REQUEST)
 
@@ -105,8 +105,8 @@ class ContextRestService : RestService() {
                 }
 
                 "ut-context" -> {
-                    val filePath = getStringParameter("path", urlDecoder)
-                        ?: return sendJsonError(request, context, "Missing 'path' parameter", HttpResponseStatus.BAD_REQUEST)
+                    val filePath = normalizePath(getStringParameter("path", urlDecoder)
+                        ?: return sendJsonError(request, context, "Missing 'path' parameter", HttpResponseStatus.BAD_REQUEST))
                     val funcName = getStringParameter("name", urlDecoder)
                         ?: return sendJsonError(request, context, "Missing 'name' parameter", HttpResponseStatus.BAD_REQUEST)
 
@@ -171,6 +171,21 @@ class ContextRestService : RestService() {
             sendJsonError(request, context, "Internal error: ${e.message}", HttpResponseStatus.INTERNAL_SERVER_ERROR)
         }
     }
+
+    // ----------------------------------------------------------
+    // Path helpers
+    // ----------------------------------------------------------
+
+    /**
+     * Normalise a file path received from the query string.
+     *
+     * On Windows, users typically copy paths with backslashes (e.g. D:\project\src\file.cpp).
+     * IntelliJ's VirtualFileSystem always uses forward slashes internally, even on Windows,
+     * so we replace every backslash with a forward slash before passing the path downstream.
+     *
+     * This is a no-op on macOS / Linux where paths already use forward slashes.
+     */
+    private fun normalizePath(rawPath: String): String = rawPath.replace('\\', '/')
 
     // ----------------------------------------------------------
     // Response helpers

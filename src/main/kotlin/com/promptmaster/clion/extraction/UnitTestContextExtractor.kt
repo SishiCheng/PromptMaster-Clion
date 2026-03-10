@@ -8,14 +8,16 @@ import com.intellij.openapi.vfs.VirtualFile
 import com.intellij.openapi.application.ReadAction
 import com.promptmaster.clion.models.*
 import java.util.concurrent.ConcurrentHashMap
+import java.io.File as IoFile
 
 /**
  * Extracts unit-test context in the flat string / string-array format
  * expected by the Continue prompt templates (aligned with the VS Code
  * CodeArtsX-IDE plugin output).
  *
- * This extractor operates directly on file text, so it works identically
- * in both CLion Classic (PSI) and Nova (Radler) engine modes.
+ * File discovery uses java.io.File (filesystem) rather than IntelliJ VFS
+ * so that it works in CLion Nova/Radler mode even when the VFS has not
+ * been fully populated by classic CIDR PSI indexing.
  */
 class UnitTestContextExtractor(private val project: Project) {
 
@@ -92,27 +94,29 @@ class UnitTestContextExtractor(private val project: Project) {
         val headFiles = resolvedIncludes.values.map { relativize(it, basePath) }
 
         // 6. structDefinitions (file + headers, filtered)
+        //    Uses readTextByPath so headers are readable even when VFS is unpopulated.
         val structDefs = mutableListOf<String>()
         structDefs.addAll(collectRawTypeDefinitions(fileText, usedIds))
         for ((_, absPath) in resolvedIncludes) {
-            val hdr = LocalFileSystem.getInstance().findFileByPath(absPath) ?: continue
-            structDefs.addAll(collectRawTypeDefinitions(readText(hdr), usedIds))
+            val hdrText = readTextByPath(absPath) ?: continue
+            structDefs.addAll(collectRawTypeDefinitions(hdrText, usedIds))
         }
 
         // 7. macroDefinitions (file + headers, filtered)
         val macroDefs = mutableListOf<String>()
         macroDefs.addAll(collectRawMacros(fileText, usedIds))
         for ((_, absPath) in resolvedIncludes) {
-            val hdr = LocalFileSystem.getInstance().findFileByPath(absPath) ?: continue
-            macroDefs.addAll(collectRawMacros(readText(hdr), usedIds))
+            val hdrText = readTextByPath(absPath) ?: continue
+            macroDefs.addAll(collectRawMacros(hdrText, usedIds))
         }
 
-        // 8. externalFunctions (needs fileCtx for local function list; graceful if null)
-        val externalFuncs = if (fileCtx != null) {
-            findExternalFunctions(function, fileCtx, filePath, resolvedIncludes, basePath)
-        } else {
-            emptyList()
-        }
+        // 8. externalFunctions — works even when fileCtx is null by extracting
+        //    local function names from file text as a fallback.
+        val localFuncNames = fileCtx?.functions?.map { it.name }?.toSet()
+            ?: extractFunctionNamesFromText(fileText)
+        val externalFuncs = findExternalFunctions(
+            function, localFuncNames, filePath, resolvedIncludes, basePath
+        )
 
         return UnitTestContext(
             modulePath = filePath,
@@ -170,7 +174,7 @@ class UnitTestContextExtractor(private val project: Project) {
     }
 
     // ==========================================================
-    //  2. Include resolution
+    //  2. Include resolution  (filesystem-based, VFS-independent)
     // ==========================================================
 
     private fun resolveInclude(includePath: String, isSystem: Boolean, sourceFile: String): String? {
@@ -181,39 +185,65 @@ class UnitTestContextExtractor(private val project: Project) {
         return if (cached === UNRESOLVED_SENTINEL) null else cached
     }
 
+    /**
+     * Resolve an #include path to an absolute file path.
+     *
+     * Uses java.io.File for all filesystem operations so that it works even when
+     * IntelliJ's VFS has not been fully populated (pure Nova mode without prior
+     * Classic-mode indexing).
+     */
     private fun doResolveInclude(includePath: String, isSystem: Boolean, sourceFile: String): String? {
-        return ReadAction.compute<String?, Throwable> {
-            // 1. Relative to source directory (for quoted includes)
-            if (!isSystem) {
-                val srcDir = LocalFileSystem.getInstance().findFileByPath(sourceFile)?.parent
-                val found = srcDir?.findFileByRelativePath(includePath)
-                if (found != null && found.exists()) return@compute found.path
+        // 1. Relative to source directory (for quoted includes)
+        if (!isSystem) {
+            val srcDir = IoFile(sourceFile).parentFile
+            if (srcDir != null) {
+                val candidate = IoFile(srcDir, includePath)
+                if (candidate.isFile) return normalizeFsPath(candidate)
             }
-            // 2. Relative to each content root
-            val roots = ProjectRootManager.getInstance(project).contentRoots
-            for (root in roots) {
-                val found = root.findFileByRelativePath(includePath)
-                if (found != null && found.exists()) return@compute found.path
-            }
-            // 3. Recursive search by filename
-            val fileName = includePath.substringAfterLast('/')
-            for (root in roots) {
-                val found = searchFileRecursive(root, includePath, fileName)
-                if (found != null) return@compute found.path
-            }
-            null
         }
+
+        // 2. Relative to each project root (content roots + basePath)
+        for (rootPath in getSearchRoots()) {
+            val candidate = IoFile(rootPath, includePath)
+            if (candidate.isFile) return normalizeFsPath(candidate)
+        }
+
+        // 3. Recursive search by filename
+        val fileName = includePath.substringAfterLast('/')
+        for (rootPath in getSearchRoots()) {
+            val found = searchFileOnDisk(IoFile(rootPath), includePath, fileName)
+            if (found != null) return normalizeFsPath(found)
+        }
+
+        return null
     }
 
-    private fun searchFileRecursive(dir: VirtualFile, target: String, fileName: String): VirtualFile? {
-        if (!dir.isDirectory) {
-            return if (dir.name == fileName && dir.path.endsWith(target)) dir else null
-        }
+    /**
+     * Filesystem-based recursive search — replaces the old VFS-based searchFileRecursive.
+     * Uses java.io.File.listFiles() which always works regardless of VFS state.
+     */
+    private fun searchFileOnDisk(dir: IoFile, target: String, fileName: String): IoFile? {
+        if (!dir.isDirectory) return null
         if (dir.name.startsWith(".") || dir.name in SKIP_DIRS) return null
-        for (child in dir.children) {
-            val found = searchFileRecursive(child, target, fileName)
-            if (found != null) return found
+
+        val children = dir.listFiles() ?: return null
+
+        // Check files first (breadth-first for efficiency)
+        for (child in children) {
+            if (child.isFile && child.name == fileName) {
+                // Verify the full relative path matches (e.g. "stbox/gmssl/sm4.h" not just "sm4.h")
+                if (normalizeFsPath(child).endsWith(target)) return child
+            }
         }
+
+        // Recurse into subdirectories
+        for (child in children) {
+            if (child.isDirectory) {
+                val found = searchFileOnDisk(child, target, fileName)
+                if (found != null) return found
+            }
+        }
+
         return null
     }
 
@@ -315,12 +345,18 @@ class UnitTestContextExtractor(private val project: Project) {
     }
 
     // ==========================================================
-    //  5. External functions
+    //  5. External functions  (filesystem-based search)
     // ==========================================================
 
+    /**
+     * Find functions called in [function]'s body but defined elsewhere.
+     *
+     * @param localFuncNames Names of functions defined in the same source file.
+     *                       Used to exclude local functions from the result.
+     */
     private fun findExternalFunctions(
         function: FunctionInfo,
-        fileCtx: FileContext,
+        localFuncNames: Set<String>,
         filePath: String,
         resolvedIncludes: Map<String, String>,
         basePath: String
@@ -330,21 +366,20 @@ class UnitTestContextExtractor(private val project: Project) {
         // a) Identifiers that look like function calls
         val calledNames = extractCalledFunctionNames(body)
 
-        // b) Functions defined in current file → exclude (always include the target itself)
-        val localNames = fileCtx.functions.map { it.name }.toSet() + setOf(function.name)
-
-        // c) Filter
-        val externalNames = calledNames - localNames - CPP_KEYWORDS - STANDARD_FUNCTIONS
+        // b) Filter out local, language keywords, and standard library functions
+        val allLocal = localFuncNames + setOf(function.name)
+        val externalNames = calledNames - allLocal - CPP_KEYWORDS - STANDARD_FUNCTIONS
 
         if (externalNames.isEmpty()) return emptyList()
 
         val results = mutableListOf<String>()
         val found = mutableSetOf<String>()
 
-        // Search resolved headers first
+        // Search resolved headers first (read via filesystem fallback)
         for ((_, absPath) in resolvedIncludes) {
-            val hdr = LocalFileSystem.getInstance().findFileByPath(absPath) ?: continue
-            val hdrCtx = textExtractor.extractFileContext(hdr) ?: continue
+            val hdrText = readTextByPath(absPath) ?: continue
+            val fileName = absPath.substringAfterLast('/')
+            val hdrCtx = textExtractor.extractFileContext(hdrText, absPath, fileName) ?: continue
             for (f in hdrCtx.functions) {
                 if (f.name in externalNames && f.name !in found) {
                     results.add("${f.signature} @ ${relativize(absPath, basePath)}")
@@ -362,15 +397,14 @@ class UnitTestContextExtractor(private val project: Project) {
             }
         }
 
-        // Broaden: search project files for remaining names
+        // Broaden: search project files for remaining names (filesystem-based)
         val remaining = externalNames - found
         if (remaining.isNotEmpty()) {
-            ReadAction.compute<Unit, Throwable> {
-                val roots = ProjectRootManager.getInstance(project).contentRoots
-                for (root in roots) {
-                    searchProjectForFunctions(root, remaining, found, results, filePath, basePath)
-                    if (found.containsAll(remaining)) break
-                }
+            for (rootPath in getSearchRoots()) {
+                searchProjectForFunctions(
+                    IoFile(rootPath), remaining, found, results, filePath, basePath
+                )
+                if (found.containsAll(remaining)) break
             }
         }
 
@@ -383,8 +417,13 @@ class UnitTestContextExtractor(private val project: Project) {
         return callRegex.findAll(body).map { it.groupValues[1] }.toSet()
     }
 
+    /**
+     * Filesystem-based project search for external functions.
+     * Traverses directories using java.io.File, reads C/C++ files via readTextByPath,
+     * and extracts function signatures using TextBasedCppExtractor.
+     */
     private fun searchProjectForFunctions(
-        dir: VirtualFile,
+        dir: IoFile,
         targets: Set<String>,
         found: MutableSet<String>,
         results: MutableList<String>,
@@ -392,19 +431,22 @@ class UnitTestContextExtractor(private val project: Project) {
         basePath: String
     ) {
         if (found.containsAll(targets)) return
+
         if (!dir.isDirectory) {
-            if (isCppFile(dir) && dir.path != excludePath) {
-                val ctx = textExtractor.extractFileContext(dir) ?: return
+            val normalizedPath = normalizeFsPath(dir)
+            if (isCppFileName(dir.name) && normalizedPath != excludePath) {
+                val text = readTextByPath(normalizedPath) ?: return
+                val ctx = textExtractor.extractFileContext(text, normalizedPath, dir.name) ?: return
                 for (f in ctx.functions) {
                     if (f.name in targets && f.name !in found) {
-                        results.add("${f.signature} @ ${relativize(dir.path, basePath)}")
+                        results.add("${f.signature} @ ${relativize(normalizedPath, basePath)}")
                         found.add(f.name)
                     }
                 }
                 for (s in ctx.structs) {
                     for (f in s.methods) {
                         if (f.name in targets && f.name !in found) {
-                            results.add("${f.signature} @ ${relativize(dir.path, basePath)}")
+                            results.add("${f.signature} @ ${relativize(normalizedPath, basePath)}")
                             found.add(f.name)
                         }
                     }
@@ -412,8 +454,11 @@ class UnitTestContextExtractor(private val project: Project) {
             }
             return
         }
+
         if (dir.name.startsWith(".") || dir.name in SKIP_DIRS) return
-        for (child in dir.children) {
+
+        val children = dir.listFiles() ?: return
+        for (child in children) {
             searchProjectForFunctions(child, targets, found, results, excludePath, basePath)
             if (found.containsAll(targets)) return
         }
@@ -443,14 +488,69 @@ class UnitTestContextExtractor(private val project: Project) {
             .toSet()
     }
 
+    /**
+     * Rough extraction of function names from file text (fallback when fileCtx is null).
+     * Used to build the "local functions" set for filtering external function calls.
+     */
+    private fun extractFunctionNamesFromText(text: String): Set<String> {
+        val regex = Regex(
+            """\b(\w+)\s*\([^)]*\)\s*(?:const\s*)?(?:noexcept\s*)?(?:override\s*)?(?:final\s*)?\{""",
+            RegexOption.MULTILINE
+        )
+        return regex.findAll(text)
+            .map { it.groupValues[1] }
+            .filter { it !in CPP_KEYWORDS }
+            .toSet()
+    }
+
+    /**
+     * Collect project search roots: content roots + project basePath (deduplicated).
+     * This ensures we always have at least one root to search from, even when
+     * contentRoots is empty (possible in pure Nova mode).
+     */
+    private fun getSearchRoots(): List<String> {
+        val roots = mutableListOf<String>()
+        try {
+            ReadAction.compute<Unit, Throwable> {
+                ProjectRootManager.getInstance(project).contentRoots.mapTo(roots) { it.path }
+            }
+        } catch (_: Throwable) {}
+        val basePath = project.basePath
+        if (basePath != null && roots.none { it == basePath }) {
+            roots.add(basePath)
+        }
+        return roots
+    }
+
+    /**
+     * Read file text by absolute path. Tries VFS first; falls back to java.io.File
+     * when VFS has not been populated for this path.
+     */
+    private fun readTextByPath(path: String): String? {
+        // Try VFS (fast path — works when VFS is populated)
+        val vf = LocalFileSystem.getInstance().findFileByPath(path)
+        if (vf != null) {
+            return try { String(vf.contentsToByteArray(), Charsets.UTF_8) } catch (_: Throwable) { null }
+        }
+        // Fallback: read directly from filesystem
+        val f = IoFile(path)
+        return if (f.isFile) {
+            try { f.readText(Charsets.UTF_8) } catch (_: Throwable) { null }
+        } else null
+    }
+
     private fun readText(vf: VirtualFile): String =
         String(vf.contentsToByteArray(), Charsets.UTF_8)
 
     private fun relativize(abs: String, base: String): String =
         if (abs.startsWith(base)) abs.removePrefix(base).removePrefix("/") else abs
 
-    private fun isCppFile(f: VirtualFile): Boolean {
-        val ext = f.extension?.lowercase() ?: return false
+    /** Normalise a java.io.File path to forward slashes (VFS / cross-platform format). */
+    private fun normalizeFsPath(f: IoFile): String =
+        f.absolutePath.replace('\\', '/')
+
+    private fun isCppFileName(name: String): Boolean {
+        val ext = name.substringAfterLast('.', "").lowercase()
         return ext in CPP_EXTENSIONS
     }
 

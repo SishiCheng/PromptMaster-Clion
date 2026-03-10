@@ -1,7 +1,7 @@
 plugins {
     id("java")
-    id("org.jetbrains.kotlin.jvm") version "2.1.20"
-    id("org.jetbrains.kotlin.plugin.serialization") version "2.1.20"
+    id("org.jetbrains.kotlin.jvm") version "1.9.25"
+    id("org.jetbrains.kotlin.plugin.serialization") version "1.9.25"
     id("org.jetbrains.intellij.platform") version "2.11.0"
 }
 
@@ -10,6 +10,17 @@ version = providers.gradleProperty("pluginVersion").get()
 
 kotlin {
     jvmToolchain(21)
+    compilerOptions {
+        // Emit Java 17 bytecode for maximum compatibility.
+        // CLion 2024.2 defaults to JBR 21 but corporate environments may
+        // override the JDK via CLION_JDK / JDK_HOME to JBR 17.
+        jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17)
+    }
+}
+
+java {
+    sourceCompatibility = JavaVersion.VERSION_17
+    targetCompatibility = JavaVersion.VERSION_17
 }
 
 repositories {
@@ -20,7 +31,12 @@ repositories {
 }
 
 dependencies {
-    implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.7.3")
+    implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.6.3") {
+        // Exclude Kotlin stdlib — the IDE already bundles it.
+        // Shipping our own copy causes classloading conflicts on Windows,
+        // where the JVM picks up the bundled JAR before the platform's.
+        exclude(group = "org.jetbrains.kotlin")
+    }
 
     intellijPlatform {
         clion(providers.gradleProperty("platformVersion"))

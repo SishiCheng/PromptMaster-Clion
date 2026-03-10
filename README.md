@@ -2,7 +2,7 @@
 
 CLion 插件 —— 通过本地 HTTP API 提取 C/C++ 代码上下文，用于 AI 辅助单元测试生成。
 
-支持 CLion **Classic 引擎**（PSI 提取）和 **Nova/Radler 引擎**（文本正则提取），兼容 CLion 2025.2 ~ 2025.3。
+支持 CLion **Classic 引擎**（PSI 提取）和 **Nova/Radler 引擎**（文本正则提取），兼容 CLion 2024.2 ~ 2025.3。
 
 ---
 
@@ -12,7 +12,7 @@ CLion 插件 —— 通过本地 HTTP API 提取 C/C++ 代码上下文，用于 
 
 | 项目 | 要求 |
 |------|------|
-| IDE | CLion 2025.2 或更高版本 |
+| IDE | CLion 2024.2 或更高版本（2024.2 ~ 2025.3 已验证）|
 | JVM | Java 21+ |
 | 操作系统 | macOS / Linux / Windows |
 
@@ -79,6 +79,36 @@ curl http://localhost:63342/api/cpp-context/health
 基础 URL：`http://localhost:63342/api/cpp-context`
 
 所有端点返回 JSON，格式为 `{ "success": true/false, "data": ..., "error": "..." }`。
+
+### Windows 路径说明
+
+Windows 路径含盘符和反斜杠（例如 `D:\project\src\file.cpp`），直接粘贴到 curl 命令里会导致两个问题：
+
+| 问题 | 原因 | 解决方案 |
+|------|------|--------|
+| `&` 截断命令 | CMD/PowerShell 把 `&` 当作命令分隔符 | 用双引号 `"..."` 包住整个 URL |
+| 反斜杠被误解 | 部分 shell/工具把 `\` 视为转义符 | 改用正斜杠，或直接传反斜杠（插件服务端会自动转换） |
+
+**推荐写法**：
+
+```cmd
+REM CMD（命令提示符）—— 直接用 curl，行为与 Linux 一致
+curl "http://localhost:63342/api/cpp-context/ut-context?path=D:/project/src/file.cpp&name=myFunc"
+```
+
+```powershell
+# PowerShell —— 必须用 curl.exe，否则会触发 Invoke-WebRequest 别名
+# （Invoke-WebRequest 会返回 StatusCode/RawContent 等额外字段，不是纯 JSON）
+curl.exe "http://localhost:63342/api/cpp-context/ut-context?path=D:/project/src/file.cpp&name=myFunc"
+
+# 或者用 PowerShell 原生方式，自动解析 JSON：
+Invoke-RestMethod "http://localhost:63342/api/cpp-context/ut-context?path=D:/project/src/file.cpp&name=myFunc"
+```
+
+> **关键点**：
+> 1. 把路径里的 `\` 换成 `/`（`D:\project\src\file.cpp` → `D:/project/src/file.cpp`）
+> 2. 用双引号包裹整个 URL（防止 `&` 被 shell 截断）
+> 3. PowerShell 必须用 `curl.exe`，不能直接用 `curl`（后者是 `Invoke-WebRequest` 别名）
 
 ### GET /health
 
@@ -180,8 +210,8 @@ curl http://localhost:63342/api/cpp-context/invalidate
 
 | 模式 | CLion 版本 | 提取方式 | 说明 |
 |------|-----------|---------|------|
-| **Classic** | 2025.2.x | PSI（语法树）| 通过 CIDR PSI API 提取，精度最高 |
-| **Nova/Radler** | 2025.3+ | 文本正则 | CIDR PSI 被禁用，使用正则 + 括号深度匹配提取 |
+| **Classic** | 2024.2 ~ 2025.2.x | PSI（语法树）| 通过 CIDR PSI API 提取，精度最高 |
+| **Nova/Radler** | 2025.3+ | 文本正则 | CIDR PSI 被禁用，使用正则 + 括号深度匹配 + 文件系统搜索 |
 
 插件会自动检测引擎模式，通过 `/health` 端点的 `engineMode` 和 `extractionMode` 字段可以确认。
 
@@ -193,6 +223,9 @@ curl http://localhost:63342/api/cpp-context/invalidate
 | 404 错误 | 端点路径错误 | 确认 URL 以 `/api/cpp-context/` 开头 |
 | "Function not found" | 函数提取失败 | 检查 CLion 日志（Help → Show Log），查看详细错误 |
 | 缓存数据过期 | 文件修改后未更新 | 调用 `/invalidate` 刷新缓存 |
+| Windows curl 命令被截断 | `&` 被 CMD/PowerShell 解释为命令分隔符 | 用双引号包住整个 URL：`curl "http://...?path=D:/...&name=func"` |
+| Windows 路径 "File not found" | 路径使用了反斜杠 | 将 `\` 换为 `/`，例如 `D:\src\file.cpp` → `D:/src/file.cpp` |
+| PowerShell curl 返回 StatusCode/RawContent 等字段 | PowerShell 的 `curl` 是 `Invoke-WebRequest` 的别名，不是真正的 curl | 改用 `curl.exe "..."` 或 `Invoke-RestMethod "..."` |
 | Windows 构建 "unable to access jarfile" | `gradle-wrapper.jar` 缺失 | 运行 `gradle wrapper --gradle-version=8.13`，或从仓库重新 clone |
 
 ---
@@ -232,9 +265,9 @@ PromptMaster-Clion/
 
 | 组件 | 技术 | 版本 |
 |------|------|------|
-| 语言 | Kotlin | 2.1.20 |
-| IDE 平台 | IntelliJ Platform SDK | 2025.2.2 |
-| 序列化 | Kotlinx Serialization | 1.7.3 |
+| 语言 | Kotlin | 1.9.25 |
+| IDE 平台 | IntelliJ Platform SDK | 2024.2.5（构建基准，兼容至 2025.3）|
+| 序列化 | Kotlinx Serialization | 1.6.3 |
 | 构建 | Gradle + IntelliJ Platform Plugin | 8.13 / 2.11.0 |
 | JVM | Java | 21 |
 
@@ -262,6 +295,7 @@ ContextCache (5 min TTL)    ← ConcurrentHashMap + PSI 变更监听失效
 - `com.intellij.cidr.lang` 声明为 **optional dependency**，确保 Nova 模式下插件仍能加载
 - `CppContextExtractor` 使用**反射**加载 `OCFile` 等 CIDR 类，避免编译时硬依赖
 - `TextBasedCppExtractor` 使用**括号深度匹配**而非纯正则，处理多行函数签名
+- `UnitTestContextExtractor` 使用 **java.io.File** 做文件发现，不依赖 VFS 预填充
 - `ConcurrentHashMap` 不能存 `null`，用 sentinel 值替代
 
 ## 构建与调试
@@ -300,4 +334,4 @@ gradlew.bat clean buildPlugin
 
 ---
 
-**版本**: 1.0.1 | **兼容**: CLion 2025.2 ~ 2025.3
+**版本**: 1.1.0 | **兼容**: CLion 2024.2 ~ 2025.3

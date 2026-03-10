@@ -26,7 +26,7 @@ class ContextExtractionService(private val project: Project) : Disposable {
     private val cache = ContextCache()
 
     companion object {
-        const val PLUGIN_VERSION = "1.0.1"
+        const val PLUGIN_VERSION = "1.1.0"
 
         fun getInstance(project: Project): ContextExtractionService {
             return project.getService(ContextExtractionService::class.java)

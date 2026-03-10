@@ -52,6 +52,30 @@ class TextBasedCppExtractor(@Suppress("unused") private val project: Project) {
         }
     }
 
+    /**
+     * Overload that accepts raw text instead of VirtualFile.
+     * Used when VFS has not been populated (e.g. pure Nova mode without prior Classic indexing).
+     */
+    fun extractFileContext(text: String, filePath: String, fileName: String): FileContext? {
+        return try {
+            val lines = text.lines()
+            FileContext(
+                filePath = filePath,
+                fileName = fileName,
+                includes = extractIncludes(lines),
+                functions = extractFunctions(text, lines),
+                structs = extractStructs(text, lines),
+                enums = extractEnums(text, lines),
+                typedefs = extractTypedefs(lines),
+                macros = extractMacros(lines),
+                namespaces = extractNamespaces(text),
+                globalVariables = emptyList()
+            )
+        } catch (_: Throwable) {
+            null
+        }
+    }
+
     fun extractFunctionByName(virtualFile: VirtualFile, functionName: String): FunctionInfo? {
         // Try the general extractor first (funcRegex)
         val ctx = extractFileContext(virtualFile)
