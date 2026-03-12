@@ -214,10 +214,12 @@ curl http://localhost:63342/api/cpp-context/invalidate
 
 ## CLion 引擎模式
 
-| 模式 | CLion 版本 | 提取方式 | 说明 |
-|------|-----------|---------|------|
-| **Classic** | 2024.2 ~ 2025.2.x | PSI（语法树）| 通过 CIDR PSI API 提取，精度最高 |
-| **Nova/Radler** | 2025.3+ | 文本正则 | CIDR PSI 被禁用，使用正则 + 括号深度匹配 + 文件系统搜索 |
+| 模式 | CLion 版本 | `/file`、`/function` | `/ut-context` | 说明 |
+|------|-----------|---------------------|---------------|------|
+| **Classic** | 2024.2 ~ 2025.2.x | PSI（语法树） | PSI + 文件系统 | CIDR PSI 可用，函数/结构体/include 均通过 AST 提取，精度最高 |
+| **Nova/Radler** | 2025.3+ | 文本正则 | 文本正则 + 文件系统 | CIDR PSI 被禁用，使用正则 + 括号深度匹配 + 文件系统搜索 |
+
+> `/ut-context` 在两种模式下都依赖文件系统做 include 解析和外部函数搜索（PSI 不覆盖跨文件搜索）；Classic 模式下函数签名和函数体的基础信息优先从 PSI 获取，Nova 模式下自动降级到文本模式。
 
 插件会自动检测引擎模式，通过 `/health` 端点的 `engineMode` 和 `extractionMode` 字段可以确认。
 
@@ -266,7 +268,8 @@ PromptMaster-Clion/
 ├── build.gradle.kts
 ├── gradle.properties
 └── docs/
-    └── extraction-methodology.md        # 提取方法详解文档
+    ├── extraction-methodology.md        # 提取方法详解文档
+    └── extraction-approach-rationale.md # 方案选型说明（PSI vs 正则 vs TreeSitter vs LSP）
 ```
 
 ## 技术栈
@@ -292,7 +295,7 @@ ContextExtractionService    ← 缓存层 + 提取调度
     │
     ├── CppContextExtractor        ← PSI 模式（反射加载 OCFile）
     ├── TextBasedCppExtractor      ← 文本模式（正则 + 深度匹配）
-    ├── UnitTestContextExtractor   ← ut-context 编排
+    ├── UnitTestContextExtractor   ← ut-context 编排（Classic: PSI→文件系统；Nova: 文本→文件系统）
     └── CMakeContextExtractor      ← CMake 反射提取
     │
     ▼
@@ -339,6 +342,8 @@ gradlew.bat clean buildPlugin
 ## 提取方法详解
 
 详见 [docs/extraction-methodology.md](docs/extraction-methodology.md)。
+
+方案选型决策（为什么 Nova 模式不用 PSI/TreeSitter/LSP）详见 [docs/extraction-approach-rationale.md](docs/extraction-approach-rationale.md)。
 
 ---
 

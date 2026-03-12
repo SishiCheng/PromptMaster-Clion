@@ -18,12 +18,27 @@ import java.io.File as IoFile
  * File discovery uses java.io.File (filesystem) rather than IntelliJ VFS
  * so that it works in CLion Nova/Radler mode even when the VFS has not
  * been fully populated by classic CIDR PSI indexing.
+ *
+ * Extraction strategy (mirrors ContextExtractionService):
+ *   Classic mode (PSI available): CppContextExtractor → accurate AST-based
+ *                                 function/include info, no regex false positives
+ *   Nova/Radler mode (PSI absent): TextBasedCppExtractor → regex + brace-depth fallback
+ *
+ * Include resolution and external-function search always use java.io.File
+ * regardless of mode, since PSI does not traverse the filesystem.
  */
 class UnitTestContextExtractor(private val project: Project) {
 
     private val logger = Logger.getInstance(UnitTestContextExtractor::class.java)
 
-    /** Delegates structured parsing (function list, line numbers, etc.). */
+    /**
+     * PSI-based extractor — used when CIDR PSI is available (Classic mode).
+     * extractFileContext() returns null in Nova mode, so we always create
+     * the instance and let it self-disable via isPsiAvailable.
+     */
+    private val psiExtractor = CppContextExtractor(project)
+
+    /** Text/regex-based extractor — fallback when PSI is unavailable (Nova mode). */
     private val textExtractor = TextBasedCppExtractor(project)
 
     /** Cache: absolute include path → resolved absolute path (UNRESOLVED_SENTINEL if not found). */
@@ -56,11 +71,13 @@ class UnitTestContextExtractor(private val project: Project) {
         }
         val fileText = readText(vf)
 
-        // extractFileContext may return null (e.g. internal regex exception) — that's OK,
-        // we fall back to the direct paren-depth scanner for the target function.
-        val fileCtx = textExtractor.extractFileContext(vf)
+        // Prefer PSI-based extraction (Classic mode) for accuracy.
+        // PSI gives us AST-level body/lineNumber without regex false positives.
+        // Falls back to text-based extraction in Nova/Radler mode (PSI unavailable).
+        val fileCtx = psiExtractor.extractFileContext(vf)
+            ?: textExtractor.extractFileContext(vf)
         if (fileCtx == null) {
-            logger.info("ut-context: extractFileContext returned null for $filePath, using direct scan")
+            logger.info("ut-context: extractFileContext returned null for $filePath (psi=${CppContextExtractor.isPsiAvailable}), using direct scan")
         }
 
         // 1. Locate the target function.

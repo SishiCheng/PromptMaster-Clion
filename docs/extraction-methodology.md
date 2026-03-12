@@ -36,10 +36,10 @@ UnitTestContextExtractor.extract()    ← 编排整个提取流程
 
 CLion 有两种 C/C++ 解析引擎：
 
-| 引擎 | CLion 版本 | PSI API | 本插件策略 |
-|------|-----------|---------|-----------|
-| **Classic (CIDR)** | 2024.2 ~ 2025.2.x | `OCFile`, `OCStruct`, `OCFunctionDeclaration` 可用 | `CppContextExtractor` 通过 PSI 提取，精度最高 |
-| **Nova (Radler)** | 2025.3+ | CIDR PSI 被系统禁用 (`-Didea.suppressed.plugins.set.selector=radler`) | `TextBasedCppExtractor` 通过正则 + 深度匹配提取 |
+| 引擎 | CLion 版本 | PSI API | `/file`、`/function` 策略 | `/ut-context` 策略 |
+|------|-----------|---------|--------------------------|-------------------|
+| **Classic (CIDR)** | 2024.2 ~ 2025.2.x | `OCFile`, `OCStruct`, `OCFunctionDeclaration` 可用 | `CppContextExtractor` PSI 提取，精度最高 | PSI 提取函数/include 基础信息 + 文件系统做 include 解析和外部函数搜索 |
+| **Nova (Radler)** | 2025.3+ | CIDR PSI 被系统禁用 (`-Didea.suppressed.plugins.set.selector=radler`) | `TextBasedCppExtractor` 正则 + 深度匹配提取 | 文本模式提取函数/include 基础信息 + 文件系统做 include 解析和外部函数搜索 |
 
 **为什么用 optional dependency？**
 
@@ -243,8 +243,9 @@ private fun extractBraceBlock(text: String, openBraceIndex: Int): String? {
 这是提取函数体、结构体体、枚举体等的通用算法。通过维护一个 `depth` 计数器，
 每遇到 `{` 加一，遇到 `}` 减一，当 `depth` 回到 0 时找到匹配的闭合花括号。
 
-**注意**：当前实现不处理字符串和注释中的花括号。如果函数体中有 `"}"` 字符串或
-`// }` 注释，可能导致匹配错位。对于实际的 C/C++ 代码，这种情况极少出现。
+**注意**：`extractBraceBlock()` 是用于 struct/enum 体提取的简化版本，不处理字符串和注释中的花括号。
+函数体提取路径（`extractDefinitionText`）使用注释/字符串感知版本 `findClosingBrace()`，
+能正确跳过 `// }`、`/* } */`、`"}"` 等情况。
 
 ### 3.4 parseParameters() —— 参数列表解析
 
@@ -324,8 +325,9 @@ getCurrentCursorInfo()                  ← 在 EDT 上访问编辑器状态
     ├── editor.caretModel.logicalPosition.line  ← 获取光标行号（0-based → 1-based）
     │
     ▼
-findFunctionAtLine(fileText, caretLine)  ← 用 TextBasedCppExtractor 提取所有函数
-    │                                       找到 lineNumber ≤ caretLine 的最近函数
+findFunctionAtLine(fileText, caretLine)  ← 委托给 TextBasedCppExtractor.findFunctionAtLine()
+    │                                       验证光标行在函数体的 { ... } 范围内
+    │                                       （不只是"函数开始前"，避免函数体内的调用误匹配）
     ▼
 getUnitTestContext(filePath, funcName)   ← 复用已有的提取流水线
 ```
@@ -339,8 +341,9 @@ doExtract(filePath, functionName)
     │
     ├── 1. 读取文件文本
     │
-    ├── 2. 调用 TextBasedCppExtractor.extractFileContext()
-    │      获取 FileContext（函数列表、include 列表等）
+    ├── 2. 获取 FileContext（函数列表、include 列表等）
+    │      Classic 模式：CppContextExtractor.extractFileContext() [PSI，精度更高]
+    │      Nova 模式：TextBasedCppExtractor.extractFileContext() [文本正则，自动降级]
     │
     ├── 3. 定位目标函数
     │      ├── 首选：fileCtx.functions.find { it.name == functionName }
@@ -371,6 +374,7 @@ doExtract(filePath, functionName)
     │
     ├── 9. findExternalFunctions()
     │      a) 从 body 中提取 identifier( 模式的函数调用
+    │         body 来自 FunctionInfo.body；若为 null，从源文本 + 行号重新提取
     │      b) 减去本地函数名 + C++ 关键字 + 标准库函数
     │         （本地函数名来自 fileCtx.functions 或 extractFunctionNamesFromText 回退）
     │      c) 先搜头文件，再用 java.io.File 搜项目
