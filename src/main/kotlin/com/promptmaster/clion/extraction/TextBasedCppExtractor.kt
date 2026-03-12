@@ -89,6 +89,199 @@ class TextBasedCppExtractor(@Suppress("unused") private val project: Project) {
         return findFunctionInText(text, functionName)
     }
 
+/**
+     * Find a specific function at a specific line number.
+     * This is more efficient than extracting all functions when you only need one.
+     */
+    fun findFunctionAtLine(text: String, targetLine: Int): FunctionInfo? {
+        for (m in funcRegex.findAll(text)) {
+            val lineNumber = text.substring(0, m.range.first).count { it == '\n' } + 1
+            
+            if (lineNumber > targetLine) {
+                break
+            }
+            val prefix = m.groupValues[1].trim()
+            val funcName = m.groupValues[2]
+            val params = m.groupValues[3]
+            val qualifiers = m.groupValues[4].trim()
+            val terminator = m.groupValues[5]
+            if (funcName in nonFuncKeywords) continue
+            if (prefix.contains("#")) continue
+            if (prefix.matches(Regex(""".*\b(struct|class|union|enum)\b.*"""))) continue
+            val isDefinition = terminator == "{"
+            
+            if (isDefinition) {
+                val openBraceIndex = findOpeningBraceAfterMatch(text, m.range.last)
+                if (openBraceIndex == null) continue
+                
+                val closeBraceOffset = findClosingBrace(text, openBraceIndex)
+                if (closeBraceOffset != null) {
+                    val functionEndLine = text.substring(0, closeBraceOffset).count { it == '\n' } + 1
+                    if (targetLine >= lineNumber && targetLine <= functionEndLine) {
+                        return buildFunctionInfoFromMatch(
+                            text = text,
+                            match = m,
+                            prefix = prefix,
+                            funcName = funcName,
+                            params = params,
+                            qualifiers = qualifiers,
+                            isDefinition = isDefinition,
+                            lineNumber = lineNumber,
+                            openBraceIndex = openBraceIndex
+                        )
+                    }
+                }
+            }
+        }
+        return null
+    }
+
+    /** * Find the closing brace for a given opening brace index. */
+    private fun findClosingBrace(text: String, openBraceIndex: Int): Int? {
+        var depth = 1
+        var i = openBraceIndex + 1
+        var inSingleLineComment = false
+        var inMultiLineComment = false
+        var inCharLiteral = false
+        var inStringLiteral = false
+        while (i < text.length && depth > 0) {
+            val c = text[i]
+            val prev = if (i > 0) text[i - 1] else '\u0000'
+            val next = if (i < text.length - 1) text[i + 1] else '\u0000'
+            // Handle comments and string/char literals
+            when {
+                inSingleLineComment -> {
+                    if (c == '\n') inSingleLineComment = false
+                }
+                inMultiLineComment -> {
+                    if (c == '*' && next == '/') {
+                        inMultiLineComment = false
+                        i++ // skip '/'
+                    }
+                }
+                inCharLiteral -> {
+                    if (c == '\'' && prev != '\\') inCharLiteral = false
+                }
+                inStringLiteral -> {
+                    if (c == '"' && prev != '\\') inStringLiteral = false
+                }
+                c == '/' && next == '/' -> inSingleLineComment = true
+                c == '/' && next == '*' -> { inMultiLineComment = true; i++ }
+                c == '\'' && !inStringLiteral -> inCharLiteral = true
+                c == '"' && !inCharLiteral -> inStringLiteral = true
+                !inSingleLineComment && !inMultiLineComment && !inCharLiteral && !inStringLiteral -> {
+                    when (c) {
+                        '{' -> depth++
+                        '}' -> depth--
+                    }
+                }
+            }
+            i++
+        }
+        return if (depth == 0) i - 1 else null
+    }
+    /**
+     * Find the opening brace '{' after a regex match.
+     * Skips whitespace, comments, and string/char literals that might contain '{'.
+     */
+    private fun findOpeningBraceAfterMatch(text: String, matchEndIndex: Int): Int? {
+        var i = matchEndIndex
+        var inSingleLineComment = false
+        var inMultiLineComment = false
+        var inCharLiteral = false
+        var inStringLiteral = false
+        while (i < text.length) {
+            val c = text[i]
+            val prev = if (i > 0) text[i - 1] else '\u0000'
+            val next = if (i < text.length - 1) text[i + 1] else '\u0000'
+            // Handle comments and string/char literals
+            when {
+                inSingleLineComment -> {
+                    if (c == '\n') inSingleLineComment = false
+                }
+                inMultiLineComment -> {
+                    if (c == '*' && next == '/') {
+                        inMultiLineComment = false
+                        i++ // skip '/'
+                    }
+                }
+                inCharLiteral -> {
+                    if (c == '\'' && prev != '\\') inCharLiteral = false
+                }
+                inStringLiteral -> {
+                    if (c == '"' && prev != '\\') inStringLiteral = false
+                }
+                c == '/' && next == '/' -> inSingleLineComment = true
+                c == '/' && next == '*' -> { inMultiLineComment = true; i++ }
+                c == '\'' && !inStringLiteral -> inCharLiteral = true
+                c == '"' && !inCharLiteral -> inStringLiteral = true
+                !inSingleLineComment && !inMultiLineComment && !inCharLiteral && !inStringLiteral -> {
+                    if (c == '{') {
+                        return i
+                    }
+                    if (c == ';') {
+                        // This is a declaration, not a definition
+                        return null
+                    }
+                }
+            }
+            i++
+        }
+        return null
+    }
+    private fun buildFunctionInfoFromMatch(
+        text: String,
+        match: MatchResult,
+        prefix: String,
+        funcName: String,
+        params: String,
+        qualifiers: String,
+        isDefinition: Boolean,
+        lineNumber: Int,
+        openBraceIndex: Int? = null
+    ): FunctionInfo {
+        val normalizedParams = params.replace(Regex("""\s+"""), " ").trim()
+        
+        val signature = buildString {
+            append(prefix)
+            if (!prefix.endsWith(" ") && !prefix.endsWith("*") && !prefix.endsWith("&")) append(" ")
+            append(funcName)
+            append("(")
+            append(normalizedParams)
+            append(")")
+            if (qualifiers.isNotEmpty()) {
+                append(" ")
+                append(qualifiers)
+            }
+        }.trim()
+        // Use the provided openBraceIndex if available for proper body extraction
+        val body = if (isDefinition && openBraceIndex != null) {
+            extractBraceBlock(text, openBraceIndex)?.take(MAX_BODY_LENGTH)
+        } else if (isDefinition) {
+            // Fallback to match position if openBraceIndex not provided
+            extractBraceBlock(text, match.range.last)?.take(MAX_BODY_LENGTH)
+        } else null
+        val ownerClass = extractOwnerClass(prefix, funcName)
+        val namespacePath = extractNamespacePath(text, match.range.first)
+        return FunctionInfo(
+            name = funcName,
+            qualifiedName = buildQualifiedName(namespacePath, ownerClass, funcName),
+            returnType = extractReturnType(prefix),
+            parameters = parseParameters(params),
+            signature = signature,
+            isDefinition = isDefinition,
+            lineNumber = lineNumber,
+            body = body,
+            templateParameters = extractTemplateParamsFromPrefix(prefix),
+            isVirtual = prefix.contains("virtual"),
+            isStatic = prefix.contains("static"),
+            isConst = qualifiers.contains("const"),
+            isNoexcept = qualifiers.contains("noexcept"),
+            namespacePath = namespacePath,
+            ownerClass = ownerClass
+        )
+    }
+
     /**
      * Find a specific function DEFINITION in raw C/C++ source text using paren-depth
      * matching. This handles multi-line signatures that the general funcRegex may miss.
@@ -237,6 +430,14 @@ class TextBasedCppExtractor(@Suppress("unused") private val project: Project) {
             if (prefix.contains("#")) continue
             // Skip struct/class/enum declarations
             if (prefix.matches(Regex(""".*\b(struct|class|union|enum)\b.*"""))) continue
+
+            // Skip likely function calls inside function bodies (memcpy, printf, etc.)
+            // These are usually standard library functions called without a return type prefix
+            if (prefix.isEmpty() || prefix.matches(Regex("""^\s+$"""))) continue
+            if (prefix.matches(Regex("""^[\w\s]+$""")) && !prefix.contains(Regex("""\b(void|int|char|bool|float|double|auto|unsigned|signed|long|short|const|static|virtual|explicit|constexpr|template)\b"""))) {
+                // Looks like a bare function call with no return type, skip it
+                continue
+            }
 
             val isDefinition = terminator == "{"
             val lineNumber = text.substring(0, m.range.first).count { it == '\n' } + 1

@@ -129,7 +129,7 @@ class ContextExtractionService(private val project: Project) : Disposable {
     fun getUnitTestContextFromCursor(): UnitTestContext? {
         val info = getCurrentCursorInfo()
         if (info == null) {
-            logger.warn("ut-context auto: no active C/C++ editor or cursor is not inside a function")
+            logger.warn("ut-context auto: no active C/C++ editor or cursor is not inside a function (engine: ${if (CppContextExtractor.isPsiAvailable) "classic" else "nova"})")
             return null
         }
         logger.info("ut-context auto: detected function '${info.functionName}' in ${info.filePath} (line ${info.cursorLine})")
@@ -154,20 +154,37 @@ class ContextExtractionService(private val project: Project) : Disposable {
         ApplicationManager.getApplication().invokeAndWait({
             try {
                 val editor = FileEditorManager.getInstance(project).selectedTextEditor
-                    ?: return@invokeAndWait
+                if (editor == null) {
+                    logger.debug("ut-context auto: no active text editor found")
+                    return@invokeAndWait
+                }
                 val selectedFiles = FileEditorManager.getInstance(project).selectedFiles
-                val vf = selectedFiles.firstOrNull() ?: return@invokeAndWait
+                val vf = selectedFiles.firstOrNull()
+                if (vf == null) {
+                    logger.debug("ut-context auto: no selected files")
+                    return@invokeAndWait
+                }
+
+                logger.debug("ut-context auto: checking file ${vf.path}")
 
                 // Only handle C/C++ files
                 val ext = vf.extension?.lowercase() ?: return@invokeAndWait
-                if (ext !in CPP_EXTENSIONS) return@invokeAndWait
+                if (ext !in CPP_EXTENSIONS) {
+                    logger.debug("ut-context auto: file extension '$ext' is not a C/C++ file")
+                    return@invokeAndWait
+                }
 
                 val caretLine = editor.caretModel.logicalPosition.line + 1  // 1-based
                 val fileText = editor.document.text
 
+                logger.debug("ut-context auto: cursor at line $caretLine, total lines ${fileText.lines().size}")
+
                 val funcName = findFunctionAtLine(fileText, caretLine)
                 if (funcName != null) {
+                    logger.debug("ut-context auto: found function '$funcName' at line $caretLine")
                     result = CursorInfo(vf.path, funcName, caretLine)
+                } else {
+                    logger.debug("ut-context auto: no function found at line $caretLine")
                 }
             } catch (e: Throwable) {
                 logger.warn("ut-context auto: failed to read cursor info", e)
@@ -179,30 +196,16 @@ class ContextExtractionService(private val project: Project) : Disposable {
     /**
      * Find the function whose body contains the given line number.
      *
-     * Strategy: extract all functions with their start line numbers, then pick
-     * the one with the largest lineNumber that is still <= targetLine.
-     * This works because functions are non-overlapping in C/C++.
+     * Uses TextBasedCppExtractor.findFunctionAtLine which properly verifies
+     * that the target line falls within the function's body (between opening
+     * and closing braces), not just that the function starts before the line.
+     *
+     * This avoids false matches where function calls in the body (like memcpy)
+     * could be mistaken for the enclosing function's signature.
      */
     private fun findFunctionAtLine(fileText: String, targetLine: Int): String? {
-        val ctx = textExtractor.extractFileContext(fileText, "", "")
-            ?: return null
-
-        val sortedFuncs = ctx.functions
-            .filter { it.lineNumber > 0 }
-            .sortedBy { it.lineNumber }
-
-        if (sortedFuncs.isEmpty()) return null
-
-        // Walk sorted list; pick the last function that starts at or before targetLine
-        var best: FunctionInfo? = null
-        for (func in sortedFuncs) {
-            if (func.lineNumber <= targetLine) {
-                best = func
-            } else {
-                break
-            }
-        }
-        return best?.name
+        val funcInfo = textExtractor.findFunctionAtLine(fileText, targetLine)
+        return funcInfo?.name
     }
 
     companion object {

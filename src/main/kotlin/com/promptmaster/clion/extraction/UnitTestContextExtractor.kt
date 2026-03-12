@@ -91,7 +91,17 @@ class UnitTestContextExtractor(private val project: Project) {
 
         // 5. headFiles
         val basePath = project.basePath ?: ""
-        val headFiles = resolvedIncludes.values.map { relativize(it, basePath) }
+        val headFilesList = resolvedIncludes.values.map { relativize(it, basePath) }.toMutableList()
+        // If the source file itself is a header, include it so the generated test
+        // can #include it (otherwise the definition under test would be missing).
+        val sourceExt = vf.extension?.lowercase() ?: ""
+        if (sourceExt in HEADER_EXTENSIONS) {
+            val selfRelative = relativize(filePath, basePath)
+            if (selfRelative !in headFilesList) {
+                headFilesList.add(0, selfRelative)
+            }
+        }
+        val headFiles = headFilesList.toList()
 
         // 6. structDefinitions (file + headers, filtered)
         //    Uses readTextByPath so headers are readable even when VFS is unpopulated.
@@ -115,7 +125,7 @@ class UnitTestContextExtractor(private val project: Project) {
         val localFuncNames = fileCtx?.functions?.map { it.name }?.toSet()
             ?: extractFunctionNamesFromText(fileText)
         val externalFuncs = findExternalFunctions(
-            function, localFuncNames, filePath, resolvedIncludes, basePath
+            function, localFuncNames, filePath, resolvedIncludes, basePath, fileText
         )
 
         return UnitTestContext(
@@ -138,39 +148,51 @@ class UnitTestContextExtractor(private val project: Project) {
     /**
      * Extract the verbatim source text of a function definition
      * (from the return type through the closing brace).
+     *
+     * This method uses improved brace-matching logic that correctly handles
+     * comments and string literals, ensuring we only extract the function body
+     * and not accidentally include outer structures like namespaces.
      */
     private fun extractDefinitionText(fileText: String, func: FunctionInfo): String {
-        if (func.lineNumber <= 0) {
-            // Fallback: reconstruct
-            return if (func.body != null) "${func.signature} {\n${func.body}\n}" else func.signature
+        // Fallback: use parsed body if available
+        if (func.body != null) {
+            val bodySnippet = if (func.body.length > 5000) {
+                func.body.take(5000) + "\n// ... (truncated)"
+            } else {
+                func.body
+            }
+            return "${func.signature} {\n$bodySnippet\n}"
         }
+
+        // If no line number info, reconstruct from signature only
+        if (func.lineNumber <= 0) {
+            logger.warn("extractDefinitionText: no line number info for ${func.name}, reconstructing from signature")
+            return func.signature
+        }
+
         val lines = fileText.lines()
         val startIdx = (func.lineNumber - 1).coerceIn(0, lines.lastIndex)
-
-        // Find opening brace
         val startOffset = lines.take(startIdx).sumOf { it.length + 1 }
-        var searchOffset = startOffset
-        var openBrace = -1
-        while (searchOffset < fileText.length) {
-            val ch = fileText[searchOffset]
-            if (ch == '{') { openBrace = searchOffset; break }
-            if (ch == ';') break   // declaration only
-            searchOffset++
-            if (searchOffset - startOffset > 10_000) break
-        }
-        if (openBrace < 0) {
-            // Fallback: reconstruct from parsed fields
-            return if (func.body != null) "${func.signature} {\n${func.body}\n}" else func.signature
+
+        // Find the opening brace '{' using helper that handles comments/strings
+        val openBrace = findOpeningBrace(fileText, startOffset)
+        if (openBrace == null) {
+            logger.warn("extractDefinitionText: could not find opening brace for ${func.name}")
+            return func.signature
         }
 
-        // Brace-match for closing '}'
-        var depth = 1
-        var i = openBrace + 1
-        while (i < fileText.length && depth > 0) {
-            when (fileText[i]) { '{' -> depth++; '}' -> depth-- }
-            i++
+        // Find the matching closing brace '}' using helper that handles comments/strings
+        val closeBrace = findClosingBrace(fileText, openBrace)
+        if (closeBrace == null) {
+            logger.warn("extractDefinitionText: could not find closing brace for ${func.name}")
+            return func.signature
         }
-        return fileText.substring(startOffset, i).trim()
+
+        // Extract the complete function definition text
+        val definition = fileText.substring(startOffset, closeBrace + 1).trim()
+        
+        logger.debug("extractDefinitionText: extracted ${func.name} (${definition.length} chars)")
+        return definition
     }
 
     // ==========================================================
@@ -257,6 +279,12 @@ class UnitTestContextExtractor(private val project: Project) {
         RegexOption.MULTILINE
     )
 
+    /** Matches `typedef struct { ... } Name;` where there is NO name between struct and `{`. */
+    private val typedefAnonBlockRegex = Regex(
+        """typedef\s+(struct|class|union|enum(?:\s+class|\s+struct)?)\s*\{""",
+        RegexOption.MULTILINE
+    )
+
     private val typedefLineRegex = Regex(
         """^\s*typedef\s+(.+?)\s+(\w+)\s*;""", RegexOption.MULTILINE
     )
@@ -271,7 +299,7 @@ class UnitTestContextExtractor(private val project: Project) {
     private fun collectRawTypeDefinitions(text: String, usedIds: Set<String>): List<String> {
         val results = mutableListOf<String>()
 
-        // struct / class / union / enum blocks
+        // struct / class / union / enum blocks (named: struct Name { ... })
         for (m in typeBlockRegex.findAll(text)) {
             val name = m.groupValues[2]
             if (name !in usedIds) continue
@@ -285,10 +313,9 @@ class UnitTestContextExtractor(private val project: Project) {
             var end = i
             while (end < text.length && text[end].isWhitespace()) end++
             if (end < text.length && text[end] == ';') end++
-            // optional trailing name for typedef struct {...} Name;
+            // optional trailing name for typedef struct Name {...} Alias;
             val tail = text.substring(i, end.coerceAtMost(text.length)).trim()
             if (tail.isEmpty() || tail == ";") {
-                // Check for typedef name after }
                 val afterBrace = text.substring(i).trimStart()
                 val typedefNameMatch = Regex("""^(\w+)\s*;""").find(afterBrace)
                 if (typedefNameMatch != null) {
@@ -296,6 +323,27 @@ class UnitTestContextExtractor(private val project: Project) {
                 }
             }
             results.add(text.substring(blockStart, end).trim())
+        }
+
+        // Anonymous typedef blocks: typedef struct { ... } Name;
+        // These have NO name between struct and '{', so typeBlockRegex misses them.
+        for (m in typedefAnonBlockRegex.findAll(text)) {
+            val blockStart = m.range.first
+            val openBrace = m.range.last  // index of '{'
+            var depth = 1; var i = openBrace + 1
+            while (i < text.length && depth > 0) {
+                when (text[i]) { '{' -> depth++; '}' -> depth-- }; i++
+            }
+            if (depth != 0) continue
+            // After '}', expect optional whitespace, then Name, then ';'
+            val afterBrace = text.substring(i).trimStart()
+            val nameMatch = Regex("""^(\w+)\s*;""").find(afterBrace) ?: continue
+            val typedefName = nameMatch.groupValues[1]
+            if (typedefName !in usedIds) continue
+            // Find the semicolon after closing brace to capture the full typedef
+            val semiPos = text.indexOf(';', i)
+            if (semiPos < 0) continue
+            results.add(text.substring(blockStart, semiPos + 1).trim())
         }
 
         // typedef ... name;
@@ -359,12 +407,19 @@ class UnitTestContextExtractor(private val project: Project) {
         localFuncNames: Set<String>,
         filePath: String,
         resolvedIncludes: Map<String, String>,
-        basePath: String
+        basePath: String,
+        fileText: String = ""
     ): List<String> {
-        val body = function.body ?: return emptyList()
+        // Use function.body if available; fallback to re-extract from fileText if needed
+        var bodyText = function.body
+        if (bodyText.isNullOrEmpty() && fileText.isNotEmpty() && function.lineNumber > 0) {
+            // Attempt to re-extract function body from source text
+            bodyText = extractFunctionBodyFromText(fileText, function)
+        }
+        if (bodyText.isNullOrEmpty()) return emptyList()
 
         // a) Identifiers that look like function calls
-        val calledNames = extractCalledFunctionNames(body)
+        val calledNames = extractCalledFunctionNames(bodyText)
 
         // b) Filter out local, language keywords, and standard library functions
         val allLocal = localFuncNames + setOf(function.name)
@@ -411,10 +466,19 @@ class UnitTestContextExtractor(private val project: Project) {
         return results
     }
 
-    /** Extract identifiers followed by `(` — likely function calls. */
+    /**
+     * Extract identifiers followed by `(` — likely function calls.
+     * Also matches template function calls like `func<Type>(...)`.
+     */
     private fun extractCalledFunctionNames(body: String): Set<String> {
+        val results = mutableSetOf<String>()
+        // Standard calls: name(
         val callRegex = Regex("""(?<![.\w])(\w+)\s*\(""")
-        return callRegex.findAll(body).map { it.groupValues[1] }.toSet()
+        results.addAll(callRegex.findAll(body).map { it.groupValues[1] })
+        // Template calls: name<...>(
+        val templateCallRegex = Regex("""(?<![.\w])(\w+)\s*<[^>]*>\s*\(""")
+        results.addAll(templateCallRegex.findAll(body).map { it.groupValues[1] })
+        return results
     }
 
     /**
@@ -462,6 +526,31 @@ class UnitTestContextExtractor(private val project: Project) {
             searchProjectForFunctions(child, targets, found, results, excludePath, basePath)
             if (found.containsAll(targets)) return
         }
+    }
+
+    // ==========================================================
+    //  Extract function body from text (fallback)
+    // ==========================================================
+
+    /**
+     * Re-extract a function body from source text when it wasn't in FunctionInfo.
+     * Uses line number and function name to locate and extract the body.
+     */
+    private fun extractFunctionBodyFromText(text: String, func: FunctionInfo): String? {
+        if (func.lineNumber <= 0) return null
+        val lines = text.lines()
+        val startIdx = (func.lineNumber - 1).coerceIn(0, lines.lastIndex)
+        val startOffset = lines.take(startIdx).sumOf { it.length + 1 }
+
+        // Find opening brace
+        val openBrace = findOpeningBrace(text, startOffset) ?: return null
+
+        // Find closing brace
+        val closeBrace = findClosingBrace(text, openBrace) ?: return null
+
+        // Extract body (without braces)
+        val body = text.substring(openBrace + 1, closeBrace).trim()
+        return if (body.isNotEmpty()) body else null
     }
 
     // ==========================================================
@@ -555,6 +644,80 @@ class UnitTestContextExtractor(private val project: Project) {
     }
 
     // ==========================================================
+    //  Brace matching helpers with comment/string support
+    // ==========================================================
+    /**
+     * Find the opening brace '{' of a function body, starting from a given position.
+     * Ignores comments, string literals, and char literals.
+     */
+    private fun findOpeningBrace(text: String, startOffset: Int): Int? {
+        var i = startOffset
+        var inSingleLineComment = false
+        var inMultiLineComment = false
+        var inCharLiteral = false
+        var inStringLiteral = false
+        while (i < text.length) {
+            val c = text[i]
+            val prev = if (i > 0) text[i - 1] else '\u0000'
+            val next = if (i < text.length - 1) text[i + 1] else '\u0000'
+            when {
+                inSingleLineComment -> { if (c == '\n') inSingleLineComment = false }
+                inMultiLineComment -> { if (c == '*' && next == '/') { inMultiLineComment = false; i++ } }
+                inCharLiteral -> { if (c == '\'' && prev != '\\') inCharLiteral = false }
+                inStringLiteral -> { if (c == '"' && prev != '\\') inStringLiteral = false }
+                c == '/' && next == '/' -> inSingleLineComment = true
+                c == '/' && next == '*' -> { inMultiLineComment = true; i++ }
+                c == '\'' && !inStringLiteral -> inCharLiteral = true
+                c == '"' && !inCharLiteral -> inStringLiteral = true
+                !inSingleLineComment && !inMultiLineComment && !inCharLiteral && !inStringLiteral -> {
+                    when (c) {
+                        '{' -> return i
+                        ';' -> return null  // declaration, not definition
+                    }
+                }
+            }
+            i++
+        }
+        return null
+    }
+
+    /**
+     * Find the closing brace '}' that matches the opening brace at openBraceIndex.
+     * Ignores comments, string literals, and char literals.
+     */
+    private fun findClosingBrace(text: String, openBraceIndex: Int): Int? {
+        var depth = 1
+        var i = openBraceIndex + 1
+        var inSingleLineComment = false
+        var inMultiLineComment = false
+        var inCharLiteral = false
+        var inStringLiteral = false
+        while (i < text.length && depth > 0) {
+            val c = text[i]
+            val prev = if (i > 0) text[i - 1] else '\u0000'
+            val next = if (i < text.length - 1) text[i + 1] else '\u0000'
+            when {
+                inSingleLineComment -> { if (c == '\n') inSingleLineComment = false }
+                inMultiLineComment -> { if (c == '*' && next == '/') { inMultiLineComment = false; i++ } }
+                inCharLiteral -> { if (c == '\'' && prev != '\\') inCharLiteral = false }
+                inStringLiteral -> { if (c == '"' && prev != '\\') inStringLiteral = false }
+                c == '/' && next == '/' -> inSingleLineComment = true
+                c == '/' && next == '*' -> { inMultiLineComment = true; i++ }
+                c == '\'' && !inStringLiteral -> inCharLiteral = true
+                c == '"' && !inCharLiteral -> inStringLiteral = true
+                !inSingleLineComment && !inMultiLineComment && !inCharLiteral && !inStringLiteral -> {
+                    when (c) {
+                        '{' -> depth++
+                        '}' -> depth--
+                    }
+                }
+            }
+            i++
+        }
+        return if (depth == 0) i - 1 else null
+    }
+
+    // ==========================================================
     //  Constants
     // ==========================================================
 
@@ -566,6 +729,9 @@ class UnitTestContextExtractor(private val project: Project) {
         )
         private val CPP_EXTENSIONS = setOf(
             "c", "cpp", "cc", "cxx", "h", "hpp", "hxx", "hh"
+        )
+        private val HEADER_EXTENSIONS = setOf(
+            "h", "hpp", "hxx", "hh"
         )
         private val CPP_KEYWORDS = setOf(
             "if", "else", "for", "while", "do", "switch", "case", "return",
