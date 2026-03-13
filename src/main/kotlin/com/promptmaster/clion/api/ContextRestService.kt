@@ -2,6 +2,8 @@ package com.promptmaster.clion.api
 
 import com.intellij.openapi.diagnostic.Logger
 import com.intellij.openapi.project.ProjectManager
+import com.intellij.openapi.wm.WindowManager
+import com.intellij.openapi.wm.IdeFocusManager
 import io.netty.buffer.Unpooled
 import io.netty.channel.ChannelHandlerContext
 import io.netty.handler.codec.http.*
@@ -59,7 +61,7 @@ class ContextRestService : RestService() {
         val project = if (projectName != null) {
             ProjectManager.getInstance().openProjects.find { it.name == projectName }
         } else {
-            ProjectManager.getInstance().openProjects.firstOrNull()
+            getActiveProject()
         }
 
         if (project == null) {
@@ -240,5 +242,21 @@ class ContextRestService : RestService() {
         response.headers().set(HttpHeaderNames.ACCESS_CONTROL_ALLOW_ORIGIN, "*")
         sendResponse(request, context, response)
         return null
+    }
+    
+    /**
+     * Get the currently active project based on the focused window.
+     * If no project is focused, fall back to the last opened project.
+     */
+    private fun getActiveProject() = try {
+        val focusedProject = IdeFocusManager.getGlobalInstance().lastFocusedFrame?.project
+        if (focusedProject != null) {
+            focusedProject
+        } else {
+            ProjectManager.getInstance().openProjects.lastOrNull()
+        }
+    } catch (e: Exception) {
+        logger.warn("Failed to get active project, using first open project", e)
+        ProjectManager.getInstance().openProjects.firstOrNull()
     }
 }

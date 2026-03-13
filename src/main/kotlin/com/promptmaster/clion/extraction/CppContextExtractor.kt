@@ -101,6 +101,46 @@ class CppContextExtractor(private val project: Project) {
     }
 
     /**
+     * Extract the function at a specific line number within a file.
+     * Returns null when CIDR PSI is not available (CLion Nova/Radler mode).
+     */
+    fun extractFunctionAtLine(virtualFile: VirtualFile, targetLine: Int): FunctionInfo? {
+        if (!isPsiAvailable) return null
+        return try {
+            ReadAction.compute<FunctionInfo?, Throwable> {
+                val psiFile = PsiManager.getInstance(project).findFile(virtualFile)
+                if (psiFile !is OCFile) return@compute null
+                val document = psiFile.viewProvider.document ?: return@compute null
+                val targetOffset = document.getLineStartOffset(targetLine - 1)
+                val function = findFunctionContainingOffset(psiFile, targetOffset)
+                function?.let { buildFunctionInfo(it, it is OCFunctionDefinition) }
+            }
+        } catch (_: Throwable) {
+            null
+        }
+    }
+
+    /**
+     * Find the function definition/declaration that contains the given offset.
+     * Returns both top-level functions and methods inside structs/classes.
+     */
+    private fun findFunctionContainingOffset(ocFile: OCFile, offset: Int): OCFunctionDeclaration? {
+        val leafElement = ocFile.findElementAt(offset) ?: return null
+        
+        var current: PsiElement? = leafElement
+        while (current != null) {
+            if (current is OCFunctionDeclaration) {
+                // Return the first function declaration we find
+                // This works for both top-level functions and class methods
+                return current
+            }
+            current = current.parent
+        }
+        return null
+    }
+    
+
+    /**
      * Resolve a file path to a VirtualFile.
      */
     fun resolveFile(filePath: String): VirtualFile? {
